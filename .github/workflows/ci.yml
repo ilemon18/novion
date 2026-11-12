@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.18.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      # `pnpm build` is `tsc --noEmit && vite build`
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm check:i18n
+
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Caches are not OS-scoped in GitHub Actions; the key has to be.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ runner.os }}
+
+      # Tauri needs the WebKitGTK headers even for `cargo test`. Windows needs
+      # nothing extra: native-tls uses SChannel and WebView2 ships with the
+      # runner image.
+      - name: System dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            patchelf
+
+      # tauri-build hard-errors on a Windows target without an .ico. Catch it on
+      # the PR that touches the Windows build, not at tag time.
+      - name: Windows bundle prerequisites
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f src-tauri/icons/icon.ico || {
+            echo "::error::src-tauri/icons/icon.ico is missing; Windows bundling requires it"
+            exit 1
+          }
+
+      - run: cargo test --manifest-path src-tauri/Cargo.toml

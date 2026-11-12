@@ -1,0 +1,60 @@
+[package]
+name = "novion"
+version = "0.0.1"
+description = "Novion — local-first knowledge notes"
+authors = ["Novion"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "novion_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+# Opening URLs / revealing files in the file manager and the folder picker are
+# OS-specific; these two plugins are the cross-platform implementations.
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "io-util", "rt", "time"] }
+uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+# Integrity check for downloaded update bundles (the digest comes from the
+# release manifest; see src/update.rs). Already in the tree via reqwest.
+sha2 = "0.10"
+# Local-time timestamps for export folder names; `date` does not exist on Windows.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Notion sync: all HTTP happens in Rust so the webview never talks to the network.
+# native-tls uses Security.framework on macOS and schannel on Windows, so neither
+# needs OpenSSL headers at build time (only the Linux CI job installs libssl-dev).
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "multipart",
+    "native-tls",
+] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# A debug build still ships to testers, so it must not be an unoptimised one.
+# `opt-level = 2` on our own crate removes the temporary `String`/`Value`
+# churn that unoptimised builds keep alive across calls (measured: peak RSS of
+# the document converters dropped well below half), while `debug = 1` keeps
+# line numbers in backtraces and throws away the multi-hundred-megabyte DWARF
+# payload that used to bloat `Novion-debug.app`.
+[profile.dev]
+incremental = true
+opt-level = 2
+debug = 1
+codegen-units = 16
+lto = false
+
+# serde_json / tokio / reqwest are the hot path of every command; optimising
+# the dependencies fully is what makes a debug build feel like a release one.
+[profile.dev.package."*"]
+opt-level = 3

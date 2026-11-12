@@ -1,0 +1,1647 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Bundled interface fonts (OFL). Latin subsets only — CJK falls through to the
+ * platform fonts named in each stack, see `DOC_FONT_STACKS` in store/ui.ts. The
+ * chosen face covers the whole shell and the document, so `--font-ui` and
+ * `--font-doc` are written together by `applyDocFont()`.
+ * `font-display: swap` keeps the app usable while the variable font loads.
+ */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./assets/fonts/Inter-var.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Inter Variable";
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./assets/fonts/Inter-italic-var.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Source Serif 4 Variable";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("./assets/fonts/SourceSerif4-var.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Source Serif 4 Variable";
+  font-style: italic;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("./assets/fonts/SourceSerif4-italic-var.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("./assets/fonts/JetBrainsMono-var.woff2") format("woff2-variations");
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-active: var(--sidebar-active);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  /* The UI face is a runtime variable so Settings → Appearance can restyle the
+     whole shell (`applyDocFont()` writes `--font-ui`); the fallback stack lives
+     in `:root` below. Code blocks deliberately stay on `--font-mono`. */
+  --font-sans: var(--font-ui);
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular,
+    Menlo, Consolas, "Cascadia Mono", "PingFang SC", monospace;
+}
+
+:root {
+  --radius: 0.5rem;
+  /*
+   * Palette: warm neutral paper + a low-saturation blue accent.
+   * Every surface token is a literal hex so the theme is predictable; tints are
+   * mixed from --brand instead of being hand-picked.
+   */
+  --brand: #4a6fa5;
+  /* deep enough to carry white text (filled buttons, indicators) */
+  --brand-strong: #3f5f8e;
+  --brand-foreground: #ffffff;
+  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
+
+  --background: #f7f6f3;
+  --foreground: #2c2c2c;
+  --card: #ffffff;
+  --muted: #f0efeb;
+  --muted-foreground: #6b6b6b;
+  --accent: #efeee9;
+  --accent-foreground: #2c2c2c;
+  --popover: #ffffff;
+  --popover-foreground: #2c2c2c;
+  --border: #e2e0db;
+  --input: #dad8d2;
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #c25a5a;
+  --success: #4a9b74;
+  --warning: #c89b3c;
+  /*
+   * The rail sits on its own tone, one step away from the page, so the
+   * navigation reads as chrome rather than as part of the document. The
+   * hover/active steps are *darker* than the rail: `--accent` is lighter here
+   * and would vanish into the paper.
+   */
+  --sidebar: #f1f0ec;
+  --sidebar-hover: #e8e6e1;
+  --sidebar-active: #e0ded8;
+  /* callout accents + highlight ink, so a palette swap restyles both */
+  --callout-tip: #2f9e5f;
+  --callout-warning: #c98a2b;
+  --callout-danger: #c0392b;
+  --mark-ink: #232323;
+  /*
+   * Interface face: every label, the sidebar, menus and dialogs inherit this
+   * through `--font-sans`. macOS faces first, then the Windows ones
+   * (-apple-system is the native UI font there, Segoe UI is its Windows
+   * counterpart), with the CJK companions in the same order. Overridden on
+   * <html> by `applyDocFont()` from settings.
+   */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", Arial, sans-serif;
+  /* adjustable from settings (13–20px), default 14px */
+  --doc-font-size: 15px;
+  --doc-title-size: calc(var(--doc-font-size) * 2);
+  /*
+   * Document body face. It follows the interface face by default; the editor
+   * and the document title read this variable, so a future split (different
+   * faces for chrome and paper) only needs to stop writing `--font-ui` here.
+   */
+  --font-doc: var(--font-ui);
+  /*
+   * Syntax colours for code blocks. Low saturation on purpose: code should be
+   * scannable against warm paper, not compete with the surrounding text.
+   */
+  --tok-keyword: #7a56a8;
+  --tok-builtin: #3f6f8e;
+  --tok-string: #4a8a5f;
+  --tok-number: #b06a3b;
+  --tok-literal: #a2593f;
+  --tok-comment: #96968c;
+  --tok-tag: #a0483f;
+  --tok-attr: #8a6a34;
+  --tok-operator: #7a7a72;
+  --tok-meta: #9a9a92;
+  --tok-add: #4a8a5f;
+  --tok-del: #b0605a;
+  color-scheme: light;
+}
+
+.dark {
+  --brand: #6b9bd2;
+  --brand-strong: #5b8ac4;
+  /* light blue fill needs dark ink, not white */
+  --brand-foreground: #10161f;
+  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
+
+  --background: #1a1a1a;
+  --foreground: #e6e6e6;
+  --card: #212121;
+  --muted: #242424;
+  --muted-foreground: #9a9a9a;
+  --accent: #292929;
+  --accent-foreground: #f0f0f0;
+  --popover: #212121;
+  --popover-foreground: #e6e6e6;
+  --border: #2e2e2e;
+  --input: #3a3a3a;
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #d96b6b;
+  --success: #5db88a;
+  --warning: #d4a843;
+  --sidebar: #141414;
+  --sidebar-hover: #232323;
+  --sidebar-active: #2b2b2b;
+
+  --callout-tip: #4fbf82;
+  --callout-warning: #e0a34a;
+  --callout-danger: #e06c5f;
+  --mark-ink: #1c1f27;
+
+  /* code tokens, lifted for dark paper */
+  --tok-keyword: #b79ae0;
+  --tok-builtin: #8bb8d8;
+  --tok-string: #8cc39c;
+  --tok-number: #dfa07a;
+  --tok-literal: #e0a882;
+  --tok-comment: #6f6f6f;
+  --tok-tag: #e09088;
+  --tok-attr: #d3b478;
+  --tok-operator: #8f8f8f;
+  --tok-meta: #7c7c7c;
+  --tok-add: #8cc39c;
+  --tok-del: #d98b85;
+  color-scheme: dark;
+}
+
+/*
+ * Palettes. `:root[data-palette=…]` is (0,2,0), so it beats `.dark` (0,1,0)
+ * and is therefore the *light* variant; the dark variant adds `.dark` (0,3,0)
+ * and must redeclare every token the light block declares, otherwise a light
+ * value leaks into dark mode.
+ *
+ * Four community palettes, values from each project's official palette:
+ *   Catppuccin  Latte / Mocha          https://catppuccin.com/palette
+ *   GitHub      Light / Dark Dimmed    https://primer.style
+ *   Rosé Pine   Dawn / Moon            https://rosepinetheme.com/palette
+ *   Gruvbox     Light / Dark (medium)  https://github.com/morhetz/gruvbox
+ *
+ * Two deliberate deviations, both because the document body sits directly on
+ * `--background` here (there is no inner sheet): `--foreground` is deepened
+ * until it clears 8.5:1 so body text never reads as veiled, and
+ * `--muted-foreground` is lifted until it clears 5.5:1 because it carries UI
+ * labels everywhere. Syntax colours that fell under 3.6:1 on the code-block
+ * ground (`--muted`) were deepened to 4:1, comments to 3:1. The official
+ * value is kept in a comment next to every adjusted token.
+ */
+
+:root[data-palette="catppuccin"] {
+  --brand: #1d64ef;                     /* blue, official #1e66f5 */
+  --brand-strong: #1553cf;
+  --brand-foreground: #ffffff;
+  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
+  --background: #eff1f5;                /* base */
+  --foreground: #414359;                /* text, official #4c4f69 */
+  --card: #ffffff;
+  --muted: #e6e9ef;                     /* mantle */
+  --muted-foreground: #5c5f77;          /* subtext1 */
+  --accent: #dce0e8;                    /* crust */
+  --accent-foreground: #4c4f69;
+  --popover: #ffffff;
+  --popover-foreground: #414359;
+  --border: #ccd0da;                    /* surface0 */
+  --input: #bcc0cc;                     /* surface1 */
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #d20f39;               /* red */
+  --success: #40a02b;                   /* green */
+  --warning: #9a6410;                   /* yellow, official #df8e1d */
+  --sidebar: #e6e9ef;
+  --sidebar-hover: #dce0e8;
+  --sidebar-active: #ccd0da;
+  --callout-tip: #40a02b;
+  --callout-warning: #9a6410;
+  --callout-danger: #d20f39;
+  --mark-ink: #414359;
+  --tok-keyword: #8839ef;               /* mauve */
+  --tok-builtin: #1e66f5;               /* blue */
+  --tok-string: #348123;                /* green, official #40a02b */
+  --tok-number: #c14c08;                /* peach, official #fe640b */
+  --tok-literal: #cb3d49;               /* maroon, official #e64553 */
+  --tok-comment: #828596;               /* overlay1, official #8c8fa1 */
+  --tok-tag: #cb3d49;                   /* maroon */
+  --tok-attr: #9d6414;                  /* yellow, official #df8e1d */
+  --tok-operator: #6d7082;              /* overlay2, official #7c7f93 */
+  --tok-meta: #828596;                  /* overlay1 */
+  --tok-add: #348123;                   /* green */
+  --tok-del: #d20f39;                   /* red */
+  color-scheme: light;
+}
+
+:root[data-palette="catppuccin"].dark {
+  --brand: #89b4fa;                     /* blue */
+  --brand-strong: #6f9df0;
+  --brand-foreground: #11111b;
+  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
+  --background: #1e1e2e;                /* base */
+  --foreground: #cdd6f4;                /* text */
+  --card: #24273a;
+  --muted: #313244;                     /* surface0 */
+  --muted-foreground: #a6adc8;          /* subtext0 */
+  --accent: #313244;                    /* surface0 */
+  --accent-foreground: #cdd6f4;
+  --popover: #24273a;
+  --popover-foreground: #cdd6f4;
+  --border: #313244;                    /* surface0 */
+  --input: #45475a;                     /* surface1 */
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #f38ba8;               /* red */
+  --success: #a6e3a1;                   /* green */
+  --warning: #f9e2af;                   /* yellow */
+  --sidebar: #181825;                   /* mantle */
+  --sidebar-hover: #24273a;
+  --sidebar-active: #2d3044;
+  --callout-tip: #a6e3a1;
+  --callout-warning: #f9e2af;
+  --callout-danger: #f38ba8;
+  --mark-ink: #11111b;
+  --tok-keyword: #cba6f7;               /* mauve */
+  --tok-builtin: #89b4fa;               /* blue */
+  --tok-string: #a6e3a1;                /* green */
+  --tok-number: #fab387;                /* peach */
+  --tok-literal: #eba0ac;               /* maroon */
+  --tok-comment: #777b8f;               /* overlay0, official #6c7086 */
+  --tok-tag: #f38ba8;                   /* red */
+  --tok-attr: #f9e2af;                  /* yellow */
+  --tok-operator: #89dceb;              /* sky */
+  --tok-meta: #9399b2;                  /* overlay2 */
+  --tok-add: #a6e3a1;                   /* green */
+  --tok-del: #f38ba8;                   /* red */
+  color-scheme: dark;
+}
+
+:root[data-palette="github"] {
+  --brand: #0969da;                     /* accent.fg */
+  --brand-strong: #0550ae;
+  --brand-foreground: #ffffff;
+  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
+  --background: #ffffff;                /* canvas.default */
+  --foreground: #1f2328;                /* fg.default */
+  --card: #ffffff;
+  --muted: #f6f8fa;                     /* canvas.subtle */
+  --muted-foreground: #59636e;          /* fg.muted */
+  --accent: #eaeef2;
+  --accent-foreground: #1f2328;
+  --popover: #ffffff;
+  --popover-foreground: #1f2328;
+  --border: #d1d9e0;                    /* border.default */
+  --input: #d1d9e0;
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #cf222e;               /* danger.fg */
+  --success: #1a7f37;                   /* success.fg */
+  --warning: #9a6700;                   /* attention.fg */
+  --sidebar: #f6f8fa;
+  --sidebar-hover: #eaeef2;
+  --sidebar-active: #dfe3e8;
+  --callout-tip: #1a7f37;
+  --callout-warning: #9a6700;
+  --callout-danger: #cf222e;
+  --mark-ink: #1f2328;
+  --tok-keyword: #cf222e;
+  --tok-builtin: #0550ae;
+  --tok-string: #0a3069;
+  --tok-number: #0550ae;
+  --tok-literal: #953800;
+  --tok-comment: #59636e;
+  --tok-tag: #116329;
+  --tok-attr: #0550ae;
+  --tok-operator: #1f2328;
+  --tok-meta: #59636e;
+  --tok-add: #1a7f37;
+  --tok-del: #cf222e;
+  color-scheme: light;
+}
+
+:root[data-palette="github"].dark {
+  --brand: #539bf5;                     /* accent.fg */
+  --brand-strong: #4184d6;
+  --brand-foreground: #0d1117;
+  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
+  --background: #22272e;                /* canvas.default */
+  --foreground: #bac5d0;                /* fg.default, official #adbac7 */
+  --card: #2d333b;                      /* canvas.subtle */
+  --muted: #2d333b;
+  --muted-foreground: #929eaa;          /* fg.muted, official #768390 */
+  --accent: #373e47;                    /* canvas.inset */
+  --accent-foreground: #cdd9e5;
+  --popover: #2d333b;
+  --popover-foreground: #bac5d0;
+  --border: #444c56;                    /* border.default */
+  --input: #545d68;                     /* border.muted */
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #e5534b;               /* danger.fg */
+  --success: #57ab5a;                   /* success.fg */
+  --warning: #c69026;                   /* attention.fg */
+  --sidebar: #1c2128;                   /* canvas.inset */
+  --sidebar-hover: #22272e;
+  --sidebar-active: #2d333b;
+  --callout-tip: #57ab5a;
+  --callout-warning: #c69026;
+  --callout-danger: #e5534b;
+  --mark-ink: #0d1117;
+  --tok-keyword: #f47067;
+  --tok-builtin: #6cb6ff;
+  --tok-string: #96d0ff;
+  --tok-number: #6cb6ff;
+  --tok-literal: #f69d50;
+  --tok-comment: #768390;
+  --tok-tag: #8ddb8c;
+  --tok-attr: #6cb6ff;
+  --tok-operator: #adbac7;
+  --tok-meta: #768390;
+  --tok-add: #57ab5a;
+  --tok-del: #e86962;                   /* danger.fg, official #e5534b */
+  color-scheme: dark;
+}
+
+:root[data-palette="rose-pine"] {
+  --brand: #286983;                     /* pine */
+  --brand-strong: #1f5569;
+  --brand-foreground: #fffaf3;
+  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
+  --background: #faf4ed;                /* base */
+  --foreground: #474363;                /* text, official #575279 */
+  --card: #fffaf3;                      /* surface */
+  --muted: #f2e9e1;                     /* overlay */
+  --muted-foreground: #63607a;          /* subtle, official #797593 */
+  --accent: #f2e9e1;                    /* overlay */
+  --accent-foreground: #575279;
+  --popover: #fffaf3;
+  --popover-foreground: #474363;
+  --border: #ded4ca;                    /* highlight.high */
+  --input: #d4c9be;
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #b4637a;               /* love */
+  --success: #56949f;                   /* foam */
+  --warning: #a56a10;                   /* gold, official #ea9d34 */
+  --sidebar: #f2e9e1;
+  --sidebar-hover: #ebe1d8;
+  --sidebar-active: #e2d9d0;
+  --callout-tip: #56949f;
+  --callout-warning: #a56a10;
+  --callout-danger: #b4637a;
+  --mark-ink: #474363;
+  --tok-keyword: #7e6a94;               /* iris, official #907aa9 */
+  --tok-builtin: #286983;               /* pine */
+  --tok-string: #477a83;                /* foam, official #56949f */
+  --tok-number: #9a6722;                /* gold, official #ea9d34 */
+  --tok-literal: #a0615e;               /* rose, official #d7827e */
+  --tok-comment: #898494;               /* muted, official #9893a5 */
+  --tok-tag: #a65b71;                   /* love, official #b4637a */
+  --tok-attr: #9a6722;                  /* gold */
+  --tok-operator: #797593;              /* subtle */
+  --tok-meta: #898494;                  /* muted */
+  --tok-add: #477a83;                   /* foam */
+  --tok-del: #a65b71;                   /* love */
+  color-scheme: light;
+}
+
+:root[data-palette="rose-pine"].dark {
+  --brand: #c4a7e7;                     /* iris */
+  --brand-strong: #a98fd4;
+  --brand-foreground: #16121f;
+  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
+  --background: #232136;                /* base */
+  --foreground: #e0def4;                /* text */
+  --card: #2a273f;                      /* surface */
+  --muted: #393552;                     /* overlay */
+  --muted-foreground: #9a97b2;          /* subtle, official #908caa */
+  --accent: #393552;                    /* overlay */
+  --accent-foreground: #e0def4;
+  --popover: #2a273f;
+  --popover-foreground: #e0def4;
+  --border: #393552;                    /* highlight.high */
+  --input: #44415a;                     /* highlight.med */
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #eb6f92;               /* love */
+  --success: #9ccfd8;                   /* foam */
+  --warning: #f6c177;                   /* gold */
+  --sidebar: #1f1d2e;                   /* main.base */
+  --sidebar-hover: #2a273f;
+  --sidebar-active: #393552;
+  --callout-tip: #9ccfd8;
+  --callout-warning: #f6c177;
+  --callout-danger: #eb6f92;
+  --mark-ink: #16121f;
+  --tok-keyword: #c4a7e7;               /* iris */
+  --tok-builtin: #9ccfd8;               /* foam */
+  --tok-string: #9ccfd8;                /* foam */
+  --tok-number: #f6c177;                /* gold */
+  --tok-literal: #ea9a97;               /* rose */
+  --tok-comment: #827f97;               /* muted, official #6e6a86 */
+  --tok-tag: #eb6f92;                   /* love */
+  --tok-attr: #f6c177;                  /* gold */
+  --tok-operator: #908caa;              /* subtle */
+  --tok-meta: #908caa;                  /* subtle */
+  --tok-add: #9ccfd8;                   /* foam */
+  --tok-del: #eb6f92;                   /* love */
+  color-scheme: dark;
+}
+
+:root[data-palette="gruvbox"] {
+  --brand: #076678;                     /* blue */
+  --brand-strong: #05505e;
+  --brand-foreground: #fbf1c7;
+  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
+  --background: #fbf1c7;                /* bg0 */
+  --foreground: #3c3836;                /* fg1 */
+  --card: #fffcf2;
+  --muted: #f2e5bc;                     /* bg0_s */
+  --muted-foreground: #665c54;          /* fg3 */
+  --accent: #ebdbb2;                    /* bg1 */
+  --accent-foreground: #3c3836;
+  --popover: #fffcf2;
+  --popover-foreground: #3c3836;
+  --border: #e2d4ad;
+  --input: #d5c4a1;                     /* bg2 */
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #9d0006;               /* red */
+  --success: #79740e;                   /* green */
+  --warning: #b57614;                   /* yellow */
+  --sidebar: #f2e5bc;
+  --sidebar-hover: #ebdbb2;
+  --sidebar-active: #d5c4a1;
+  --callout-tip: #79740e;
+  --callout-warning: #b57614;
+  --callout-danger: #9d0006;
+  --mark-ink: #3c3836;
+  --tok-keyword: #9d0006;               /* red */
+  --tok-builtin: #076678;               /* blue */
+  --tok-string: #79740e;                /* green */
+  --tok-number: #8f3f71;                /* purple */
+  --tok-literal: #af3a03;               /* orange */
+  --tok-comment: #908172;               /* gray, official #928374 */
+  --tok-tag: #9d0006;                   /* red */
+  --tok-attr: #996311;                  /* yellow, official #b57614 */
+  --tok-operator: #665c54;              /* fg3 */
+  --tok-meta: #908172;                  /* gray */
+  --tok-add: #79740e;                   /* green */
+  --tok-del: #9d0006;                   /* red */
+  color-scheme: light;
+}
+
+:root[data-palette="gruvbox"].dark {
+  --brand: #83a598;                     /* blue */
+  --brand-strong: #6d9185;
+  --brand-foreground: #1d2021;
+  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
+  --background: #282828;                /* bg0 */
+  --foreground: #ebdbb2;                /* fg1 */
+  --card: #32302f;                      /* bg0_s */
+  --muted: #3c3836;                     /* bg1 */
+  --muted-foreground: #ab9c88;          /* fg4, official #a89984 */
+  --accent: #3c3836;                    /* bg1 */
+  --accent-foreground: #ebdbb2;
+  --popover: #32302f;
+  --popover-foreground: #ebdbb2;
+  --border: #504945;                    /* bg2 */
+  --input: #665c54;                     /* bg3 */
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #fb4934;               /* red */
+  --success: #b8bb26;                   /* green */
+  --warning: #fabd2f;                   /* yellow */
+  --sidebar: #1d2021;                   /* bg0_h */
+  --sidebar-hover: #32302f;
+  --sidebar-active: #3c3836;
+  --callout-tip: #b8bb26;
+  --callout-warning: #fabd2f;
+  --callout-danger: #fb4934;
+  --mark-ink: #1d2021;
+  --tok-keyword: #fc6857;               /* red, official #fb4934 */
+  --tok-builtin: #83a598;               /* blue */
+  --tok-string: #b8bb26;                /* green */
+  --tok-number: #d3869b;                /* purple */
+  --tok-literal: #fe8019;               /* orange */
+  --tok-comment: #928374;               /* gray */
+  --tok-tag: #fc6857;                   /* red */
+  --tok-attr: #fabd2f;                  /* yellow */
+  --tok-operator: #a89984;              /* fg4 */
+  --tok-meta: #928374;                  /* gray */
+  --tok-add: #b8bb26;                   /* green */
+  --tok-del: #fc6857;                   /* red */
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+    overscroll-behavior: none;
+    cursor: default;
+    user-select: none;
+  }
+  input,
+  textarea,
+  [contenteditable="true"],
+  .selectable {
+    user-select: text;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-brand) 22%, transparent);
+  }
+  kbd {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    line-height: 1.5;
+    color: var(--color-muted-foreground);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 0 4px;
+    background: color-mix(in srgb, var(--color-muted) 60%, transparent);
+  }
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  /* scrollbars stay neutral on purpose: they are chrome, never an accent */
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-foreground) 14%, transparent);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+    min-height: 28px;
+    transition: background-color 120ms ease;
+  }
+  /* a scrolling pane makes the thumb a little more visible on hover */
+  .scroller:hover::-webkit-scrollbar-thumb,
+  .scroller:active::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-foreground) 24%, transparent);
+    background-clip: content-box;
+  }
+  .scroller::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-foreground) 34%, transparent);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:active {
+    background: color-mix(in srgb, var(--color-foreground) 40%, transparent);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+/* ---------- scrolling ---------- */
+/* keeps the scrollbar thumb off the top/bottom edges of the window */
+.scroll-pane {
+  margin-block: 8px;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+/*
+ * Sidebar panes hide their scrollbar until they are actually being used.
+ * The gutter is kept (9px, same as every other pane) so the labels never
+ * shift sideways; only the thumb goes transparent.
+ *
+ * Visible while: the pane is hovered, it contains focus, or it is scrolling
+ * (`.is-scrolling`, added by `useAutoHideScrollbar`).
+ */
+.auto-hide-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+.auto-hide-scrollbar:hover::-webkit-scrollbar-thumb,
+.auto-hide-scrollbar:focus-within::-webkit-scrollbar-thumb,
+.auto-hide-scrollbar.is-scrolling::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-foreground) 24%, transparent);
+  background-clip: content-box;
+}
+.auto-hide-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-foreground) 34%, transparent);
+  background-clip: content-box;
+}
+.auto-hide-scrollbar::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--color-foreground) 44%, transparent);
+  background-clip: content-box;
+}
+
+/*
+ * Windows WebView2 (Chromium) draws classic, space-taking scrollbars, so a
+ * transparent thumb leaves a permanent empty 9px gutter. Keep the thumb
+ * visible there and drop the extra gutter that only macOS overlay scrollbars
+ * need.
+ */
+html[data-platform="windows"] ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+html[data-platform="windows"] ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-foreground) 22%, transparent);
+  background-clip: content-box;
+  border-width: 3px;
+}
+html[data-platform="windows"] .auto-hide-scrollbar::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-foreground) 22%, transparent);
+  background-clip: content-box;
+}
+html[data-platform="windows"] .scroll-pane {
+  scrollbar-gutter: auto;
+}
+
+/* ---------- editor typography ---------- */
+.doc-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tiptap {
+  outline: none;
+  font-family: var(--font-doc);
+  font-size: var(--doc-font-size);
+  line-height: 1.72;
+  color: var(--color-foreground);
+  caret-color: var(--color-foreground);
+  padding-bottom: 10vh;
+  word-break: break-word;
+}
+
+.tiptap > * + * {
+  margin-top: 0.35em;
+}
+
+.tiptap p {
+  margin: 0;
+  padding: 2px 0;
+}
+
+.tiptap h1,
+.tiptap h2,
+.tiptap h3 {
+  font-weight: 600;
+  letter-spacing: -0.011em;
+  line-height: 1.3;
+  margin: 0.9em 0 0.15em;
+  padding: 2px 0;
+}
+.tiptap h1 {
+  font-size: 1.85em;
+}
+.tiptap h2 {
+  font-size: 1.42em;
+}
+.tiptap h3 {
+  font-size: 1.18em;
+}
+
+.tiptap ul,
+.tiptap ol {
+  margin: 0.15em 0;
+  padding-left: 1.5em;
+}
+.tiptap ul {
+  list-style: disc;
+}
+.tiptap ol {
+  list-style: decimal;
+}
+.tiptap li {
+  padding: 1px 0;
+}
+.tiptap li > p {
+  padding: 0;
+}
+/* list markers carry the accent colour instead of a flat grey: the numbers are
+   part of the structure of the note, not secondary chrome */
+.tiptap ol > li::marker {
+  color: var(--color-brand);
+  font-variant-numeric: tabular-nums;
+}
+.tiptap ul > li::marker {
+  color: color-mix(in srgb, var(--color-brand) 72%, transparent);
+}
+
+.tiptap ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.1em;
+}
+.tiptap ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55em;
+}
+/*
+ * The box is optically centred on the *first line* of the item.
+ *
+ * Two numbers matter: the body line box is `line-height * font-size`, and the
+ * paragraph inside the item adds 2px of top padding. Both are folded into the
+ * offset, so the tick stays aligned at every font size (13–20px) and a
+ * multi-line item never drags the box downwards.
+ */
+.tiptap ul[data-type="taskList"] li > label {
+  --task-size: 16px;
+  flex: 0 0 auto;
+  height: var(--task-size);
+  margin-top: calc((var(--doc-font-size) * 1.72 - var(--task-size)) / 2 + 2px);
+  user-select: none;
+}
+.tiptap ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tiptap ul[data-type="taskList"] input[type="checkbox"] {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: var(--task-size);
+  height: var(--task-size);
+  margin: 0;
+  border: 1.5px solid color-mix(in srgb, var(--color-foreground) 30%, transparent);
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 130ms ease, border-color 130ms ease, box-shadow 130ms ease;
+}
+.tiptap ul[data-type="taskList"] input[type="checkbox"]:hover {
+  border-color: color-mix(in srgb, var(--color-foreground) 52%, transparent);
+  background: color-mix(in srgb, var(--color-foreground) 5%, transparent);
+}
+.tiptap ul[data-type="taskList"] input[type="checkbox"]:focus-visible {
+  outline: none;
+  border-color: var(--color-brand);
+  box-shadow: 0 0 0 3px var(--color-brand-soft);
+}
+.tiptap ul[data-type="taskList"] input[type="checkbox"]:checked {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+/* the tick is centred by the grid, so it follows the box size */
+.tiptap ul[data-type="taskList"] input[type="checkbox"]:checked::after {
+  content: "";
+  width: 4px;
+  height: 8px;
+  margin-top: -2px;
+  border: solid var(--color-primary-foreground);
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(45deg);
+}
+.tiptap ul[data-type="taskList"] li[data-checked="true"] > div > p {
+  color: var(--color-muted-foreground);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--color-muted-foreground) 60%, transparent);
+}
+
+.tiptap blockquote {
+  border-left: 2.5px solid color-mix(in srgb, var(--color-brand) 55%, transparent);
+  padding-left: 0.9em;
+  margin: 0.4em 0;
+  color: color-mix(in srgb, var(--color-foreground) 78%, transparent);
+}
+
+/* ---------- callout ---------- */
+.callout-block {
+  --callout-accent: var(--color-brand);
+  margin: 0.5em 0;
+  padding: 0.55em 0.9em;
+  border-radius: 8px;
+  border-left: 3px solid var(--callout-accent);
+  background: color-mix(in srgb, var(--callout-accent) 8%, transparent);
+}
+.callout-block[data-kind="tip"] {
+  --callout-accent: var(--callout-tip);
+}
+.callout-block[data-kind="warning"] {
+  --callout-accent: var(--callout-warning);
+}
+.callout-block[data-kind="danger"] {
+  --callout-accent: var(--callout-danger);
+}
+.callout-block {
+  position: relative;
+}
+.callout-block > .callout-kind {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  padding: 1px 5px;
+  border: none;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--callout-accent) 14%, transparent);
+  color: color-mix(in srgb, var(--callout-accent) 92%, var(--color-foreground));
+  font-size: 10.5px;
+  line-height: 1.5;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 110ms ease;
+}
+.callout-block:hover > .callout-kind,
+.callout-block > .callout-kind:focus-visible {
+  opacity: 1;
+}
+.callout-block > .callout-content > *:first-child {
+  margin-top: 0;
+}
+.callout-block > .callout-content > *:last-child {
+  margin-bottom: 0;
+}
+.callout-block > .callout-content > p {
+  padding: 0;
+}
+
+/* ---------- toggle ---------- */
+.toggle-block {
+  position: relative;
+  margin: 0.35em 0;
+  padding-left: 1.45em;
+}
+.toggle-block > .toggle-caret {
+  position: absolute;
+  left: 0;
+  top: 0.34em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15em;
+  height: 1.15em;
+  border: none;
+  background: none;
+  padding: 0;
+  color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: transform 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+.toggle-block > .toggle-caret:hover {
+  color: var(--color-foreground);
+  background: var(--color-accent);
+}
+.toggle-block[data-open="true"] > .toggle-caret {
+  transform: rotate(90deg);
+}
+/* collapsed: only the summary block stays visible */
+.toggle-block[data-open="false"] > .toggle-content > *:not(:first-child) {
+  display: none;
+}
+.toggle-block[data-open="false"] > .toggle-content > *:first-child {
+  color: color-mix(in srgb, var(--color-foreground) 88%, transparent);
+}
+
+/* ---------- table ---------- */
+.tiptap table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0.6em 0;
+  overflow: hidden;
+  font-size: 0.96em;
+}
+.tiptap table th,
+.tiptap table td {
+  position: relative;
+  min-width: 3em;
+  border: 1px solid var(--color-border);
+  padding: 6px 9px;
+  vertical-align: top;
+  text-align: left;
+}
+.tiptap table th {
+  background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
+  font-weight: 600;
+}
+.tiptap table td > p,
+.tiptap table th > p {
+  padding: 0;
+  margin: 0;
+}
+.tiptap table .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--color-brand-soft);
+  pointer-events: none;
+}
+.tiptap table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--color-brand);
+  pointer-events: none;
+}
+.tiptap .tableWrapper {
+  overflow-x: auto;
+}
+
+/* internal links read as references, not as web links */
+.tiptap a[href^="novion://"] {
+  color: var(--color-brand);
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.tiptap pre {
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0.5em 0;
+  font-family: var(--font-mono);
+  font-size: calc(var(--doc-font-size) * 0.9);
+  line-height: 1.6;
+  overflow-x: auto;
+  tab-size: 2;
+}
+.tiptap pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* ---------- code block tokens ---------- */
+.tiptap pre .tok-comment {
+  color: var(--tok-comment);
+  font-style: italic;
+}
+.tiptap pre .tok-keyword {
+  color: var(--tok-keyword);
+}
+.tiptap pre .tok-builtin {
+  color: var(--tok-builtin);
+}
+.tiptap pre .tok-string {
+  color: var(--tok-string);
+}
+.tiptap pre .tok-number {
+  color: var(--tok-number);
+}
+.tiptap pre .tok-literal {
+  color: var(--tok-literal);
+}
+.tiptap pre .tok-tag {
+  color: var(--tok-tag);
+}
+.tiptap pre .tok-attr {
+  color: var(--tok-attr);
+}
+.tiptap pre .tok-operator {
+  color: var(--tok-operator);
+}
+.tiptap pre .tok-punct,
+.tiptap pre .tok-meta {
+  color: var(--tok-meta);
+}
+.tiptap pre .tok-heading {
+  color: var(--tok-keyword);
+  font-weight: 600;
+}
+.tiptap pre .tok-strong {
+  font-weight: 600;
+}
+.tiptap pre .tok-emphasis {
+  font-style: italic;
+}
+.tiptap pre .tok-code {
+  color: var(--tok-string);
+}
+.tiptap pre .tok-link {
+  color: var(--tok-builtin);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tiptap pre .tok-quote {
+  color: var(--tok-comment);
+}
+.tiptap pre .tok-added {
+  color: var(--tok-add);
+}
+.tiptap pre .tok-removed {
+  color: var(--tok-del);
+}
+.tiptap code {
+  background: var(--color-muted);
+  border-radius: 4px;
+  padding: 0.12em 0.32em;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.tiptap hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 1.4em 0;
+}
+
+.tiptap img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+  margin: 0.4em 0;
+  transition: box-shadow 120ms ease;
+}
+.tiptap img.ProseMirror-selectednode {
+  outline: 1.5px solid var(--color-brand);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px var(--color-brand-soft);
+}
+
+.tiptap a {
+  color: var(--color-brand-strong);
+  background: color-mix(in srgb, var(--color-brand) 15%, transparent);
+  border-radius: 4px;
+  padding: 0.04em 0.28em;
+  text-decoration: none;
+  /* a link that wraps should not look like two separate pills */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.tiptap a:hover {
+  background: color-mix(in srgb, var(--color-brand) 26%, transparent);
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted-foreground);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+/* note: avoid content-visibility/contain on blocks — WKWebView can leave
+   freshly inserted ProseMirror nodes unpainted, and PM measures block boxes. */
+
+
+/* ---------- heading depth 4–6 ---------- */
+.tiptap h4,
+.tiptap h5,
+.tiptap h6 {
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.8em 0 0.1em;
+  padding: 2px 0;
+}
+.tiptap h4 {
+  font-size: 1.06em;
+}
+.tiptap h5 {
+  font-size: 1em;
+}
+.tiptap h6 {
+  font-size: 0.94em;
+  color: color-mix(in srgb, var(--color-foreground) 82%, transparent);
+}
+
+/* ---------- inline marks ---------- */
+.tiptap u {
+  text-decoration-line: underline;
+  text-underline-offset: 2px;
+}
+.tiptap mark {
+  /* highlights are pastel, so the ink has to stay dark in both themes */
+  color: var(--mark-ink);
+  border-radius: 3px;
+  padding: 0.02em 0.12em;
+}
+.tiptap sup,
+.tiptap sub {
+  font-size: 0.74em;
+  line-height: 0;
+}
+
+/* ---------- formatting bubble ---------- */
+.novion-bubble {
+  display: flex;
+  align-items: center;
+  max-width: min(92vw, 720px);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-popover);
+  color: var(--color-popover-foreground);
+  box-shadow: 0 12px 36px -14px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- image node ---------- */
+.tiptap .image-node {
+  position: relative;
+  margin: 0.6em 0;
+  width: 100%;
+}
+.tiptap .image-node .image-frame {
+  position: relative;
+  width: var(--image-width, 100%);
+  max-width: 100%;
+}
+.tiptap .image-node .image-frame img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  margin: 0;
+}
+.tiptap .image-node[data-selected="true"] .image-frame img {
+  outline: 1.5px solid var(--color-brand);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--color-brand-soft);
+}
+.tiptap .image-caption {
+  display: none;
+  width: var(--image-width, 100%);
+  margin-top: 6px;
+  font-size: 0.84em;
+  line-height: 1.5;
+  color: var(--color-muted-foreground);
+  text-align: center;
+}
+.tiptap .image-caption[data-open="true"] {
+  display: block;
+}
+.tiptap .image-tools {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-popover);
+  box-shadow: 0 8px 22px -12px rgba(0, 0, 0, 0.4);
+}
+.tiptap .image-node:hover .image-tools,
+.tiptap .image-node[data-selected="true"] .image-tools,
+.tiptap .image-node:focus-within .image-tools {
+  display: flex;
+}
+/* while dragging, the toolbar is hidden: it is anchored to the edge that is
+   moving, and repainting it every frame is the expensive part of the drag */
+.tiptap .image-node.is-resizing .image-tools {
+  display: none !important;
+}
+body.is-resizing-image,
+body.is-resizing-image .tiptap {
+  cursor: nwse-resize;
+  user-select: none;
+}
+.tiptap .image-tools button {
+  height: 22px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: 10.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+.tiptap .image-tools button:hover {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+.tiptap .image-tools button[data-active="true"] {
+  background: var(--color-brand-soft);
+  color: var(--color-brand-strong);
+}
+.tiptap .image-tools button.is-danger:hover {
+  color: var(--color-destructive);
+}
+.tiptap .image-tools .image-tools-gap {
+  width: 6px;
+  height: 14px;
+  border-left: 1px solid var(--color-border);
+}
+.tiptap .image-resize {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--color-brand);
+  border-radius: 4px;
+  background: var(--color-popover);
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.tiptap .image-node:hover .image-resize,
+.tiptap .image-node[data-selected="true"] .image-resize {
+  opacity: 1;
+}
+.tiptap .image-edit-row {
+  display: none;
+  margin-top: 6px;
+  width: var(--image-width, 100%);
+}
+.tiptap .image-edit-row[data-open="true"] {
+  display: block;
+}
+.tiptap .image-edit-row input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-background);
+  font-size: 12.5px;
+  outline: none;
+}
+.tiptap .image-edit-row input:focus {
+  border-color: var(--color-brand);
+}
+
+/* ---------- code block language ---------- */
+.tiptap .code-node {
+  position: relative;
+  margin: 0.5em 0;
+}
+.tiptap .code-node > pre {
+  margin: 0;
+}
+.tiptap .code-language {
+  position: absolute;
+  top: 7px;
+  right: 9px;
+  z-index: 2;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-popover);
+  color: var(--color-muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+.tiptap .code-node:hover .code-language,
+.tiptap .code-language:focus {
+  opacity: 1;
+}
+
+.tiptap .resize-cursor {
+  cursor: col-resize;
+}
+
+/* ---------- table of contents block ---------- */
+.tiptap .toc-block {
+  margin: 0.7em 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-muted) 55%, transparent);
+}
+.tiptap .toc-heading {
+  margin-bottom: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+.tiptap .toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tiptap .toc-item {
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 0.92em;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--color-foreground) 86%, transparent);
+  cursor: pointer;
+}
+.tiptap .toc-item:hover {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+.tiptap .toc-empty {
+  padding: 2px 4px;
+  font-size: 0.85em;
+  color: var(--color-muted-foreground);
+}
+
+/* ---------- bookmark card ---------- */
+.tiptap .bookmark-block {
+  position: relative;
+  margin: 0.7em 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-card);
+  overflow: hidden;
+}
+.tiptap .bookmark-block.ProseMirror-selectednode {
+  outline: 1.5px solid var(--color-brand);
+  outline-offset: 1px;
+}
+.tiptap .bookmark-link {
+  display: block;
+  padding: 10px 12px;
+  background: none;
+  border-radius: 0;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+.tiptap .bookmark-link:hover {
+  background: var(--color-accent);
+}
+.tiptap .bookmark-link[data-empty="true"] {
+  display: none;
+}
+.tiptap .bookmark-title {
+  font-size: 0.98em;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.tiptap .bookmark-description {
+  display: none;
+  margin-top: 2px;
+  font-size: 0.86em;
+  line-height: 1.5;
+  color: var(--color-muted-foreground);
+}
+.tiptap .bookmark-description[data-open="true"] {
+  display: block;
+}
+.tiptap .bookmark-host {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.76em;
+  color: var(--color-muted-foreground);
+  opacity: 0.85;
+}
+.tiptap .bookmark-form {
+  display: none;
+  gap: 6px;
+  padding: 8px;
+}
+.tiptap .bookmark-form[data-open="true"] {
+  display: flex;
+}
+.tiptap .bookmark-form input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-background);
+  font-size: 12.5px;
+  outline: none;
+}
+.tiptap .bookmark-form input:focus {
+  border-color: var(--color-brand);
+}
+.tiptap .bookmark-form button {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.tiptap .bookmark-remove {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-popover);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+.tiptap .bookmark-block:hover .bookmark-remove,
+.tiptap .bookmark-block[data-selected="true"] .bookmark-remove {
+  opacity: 1;
+}
+.tiptap .bookmark-remove:hover {
+  color: var(--color-destructive);
+}
+
+/* ---------- math ---------- */
+.tiptap .math-inline {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+  padding: 0 2px;
+  border-radius: 4px;
+  vertical-align: baseline;
+}
+.tiptap .math-inline:hover,
+.tiptap .math-block:hover {
+  background: color-mix(in srgb, var(--color-muted) 70%, transparent);
+}
+.tiptap .math-block {
+  display: block;
+  margin: 0.6em 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: center;
+  overflow-x: auto;
+}
+.tiptap .math-inline.ProseMirror-selectednode,
+.tiptap .math-block.ProseMirror-selectednode {
+  outline: 1.5px solid var(--color-brand);
+  outline-offset: 1px;
+}
+.tiptap .math-empty {
+  font-size: 0.9em;
+  color: var(--color-muted-foreground);
+}
+.tiptap .math-error {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--color-destructive);
+}
+.tiptap .math-input {
+  display: none;
+  width: 100%;
+  min-width: 160px;
+  margin-top: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-brand);
+  border-radius: 6px;
+  background: var(--color-background);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  outline: none;
+  resize: vertical;
+}
+.tiptap .math-block[data-editing="true"] {
+  text-align: left;
+}
+.tiptap .math-inline[data-editing="true"] {
+  display: inline-block;
+}
+.tiptap [data-editing="true"] .math-view {
+  display: none;
+}
+.tiptap [data-editing="true"] .math-input {
+  display: block;
+}
+
+/* ---------- animations ---------- */
+/* NOTE: never animate `transform` here.
+   Radix positions poppers (context menu, dropdown, dialog) with their own
+   transform; an animation on `transform` overrides it, which made the menu
+   paint at the top-left corner for one frame before snapping into place.
+   The individual `translate` / `scale` properties compose with `transform`,
+   so positioning is left alone. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+    scale: 0.985;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.anim-pop {
+  animation: pop-in 130ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * Menus (right-click + row dropdown) use a cheaper entrance than the popover
+ * animation: opacity and a 2px rise only.
+ *
+ * Two reasons, both visible as jank while the menu appears:
+ * - `scale` re-rasterises the whole popover (border, glyphs and the 30px
+ *   blur shadow) on every frame, because scaled text cannot reuse the layer;
+ * - `will-change` promotes the popper to its own compositor layer before the
+ *   first frame, so the animation is a plain composite instead of a paint.
+ * The Radix popper keeps its own `transform` for positioning — `translate`
+ * here is a separate property and does not fight it.
+ */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    translate: 0 2px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+.anim-menu {
+  will-change: opacity, translate;
+  animation: menu-in 100ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.anim-menu:not([data-state="open"]) {
+  will-change: auto;
+}
+
+.anim-fade {
+  animation: fade-in 120ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-pop,
+  .anim-menu,
+  .anim-fade {
+    animation: none;
+  }
+}
