@@ -56,6 +56,8 @@ export interface ImportStats {
   failed: number;
   targetName: string;
   messages: string[];
+  /** documents created from JSON that was not a Novion document (kept as text) */
+  plainText: number;
 }
 
 export type StorageKind = "local" | "icloud";
@@ -225,7 +227,27 @@ export interface InstallOutcome {
   /** "restart": the bundle is replaced and the app relaunches itself;
    *  "manual": the download was revealed in the file manager instead */
   mode: "restart" | "manual";
+  /** the downloaded bundle */
   path: string;
+  /** the `.app` that will hold the update; empty for "manual" */
+  installedTo: string;
+  /** where this build runs from, when the update lands somewhere else */
+  previous: string;
+  /** `update.log`, for when a helper fails without saying so */
+  logPath: string;
+}
+
+/** What the launch after an install attempt can say about it. */
+export interface UpdateReport {
+  /** version the helper was asked to install */
+  attempted: string;
+  /** version running now */
+  current: string;
+  /** false when the swap did not take: this launch is still the old build */
+  ok: boolean;
+  installedTo: string;
+  previous: string;
+  logPath: string;
 }
 
 export type ExportFormat = "md" | "html" | "json";
@@ -318,6 +340,12 @@ export const api = {
     invoke<ImportStats>("import_markdown", { source, parentId }),
   importMarkdownText: (name: string, text: string, parentId: string | null) =>
     invoke<ImportStats>("import_markdown_text", { name, text, parentId }),
+  /**
+   * A dropped document JSON (as written by {@link exportDoc}). Text that is not a
+   * Novion document still becomes one document, with the raw text kept.
+   */
+  importJsonText: (name: string, text: string, parentId: string | null) =>
+    invoke<ImportStats>("import_json_text", { name, text, parentId }),
   /** Markdown → TipTap document JSON, for pasting Markdown into a note. */
   parseMarkdownBody: (text: string) =>
     invoke<{ type: string; content?: unknown[] }>("parse_markdown_body", { text }),
@@ -351,7 +379,11 @@ export const api = {
   updateDownload: (url: string, fileName: string, checksum: string) =>
     invoke<string>("update_download", { url, fileName, checksum }),
   /** Replaces the running bundle. On success the app quits and relaunches. */
-  updateInstall: () => invoke<InstallOutcome>("update_install"),
+  updateInstall: (version: string) => invoke<InstallOutcome>("update_install", { version }),
+  /** Reads (and clears) the marker an install attempt leaves behind. */
+  updateStartupReport: () => invoke<UpdateReport | null>("update_startup_report"),
+  /** Reveals `update.log` and returns its path. */
+  updateRevealLog: () => invoke<string>("update_reveal_log"),
 };
 
 let rootCache: string | null = null;

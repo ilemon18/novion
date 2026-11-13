@@ -242,9 +242,73 @@ export const MESSAGES: Record<string, MessageRow> = {
   // ---------------------------------------------------------------- updates
   "Update": ["更新", "更新", "更新", "Actualizar"],
   "Retry": ["重试", "重試", "再試行", "Reintentar"],
-  "Download": ["下载", "下載", "ダウンロード", "Descargar"],
   "Checking…": ["检查中…", "檢查中…", "確認中…", "Comprobando…"],
   "Restart to update": ["重启更新", "重新啟動更新", "再起動して更新", "Reiniciar para actualizar"],
+  "Restart and install update": ["重启安装更新", "重新啟動安裝更新", "再起動してインストール", "Reiniciar e instalar la actualización"],
+  "Download update": ["下载更新", "下載更新", "アップデートをダウンロード", "Descargar actualización"],
+  "Click to download · {version}": [
+    "点击下载 · {version}",
+    "點擊下載 · {version}",
+    "クリックでダウンロード · {version}",
+    "Haz clic para descargar · {version}",
+  ],
+  "Installing…": ["正在安装…", "正在安裝…", "インストール中…", "Instalando…"],
+  "Installing the update, the app will restart": [
+    "正在安装更新，应用会重启",
+    "正在安裝更新，應用程式會重新啟動",
+    "アップデートをインストールしています。アプリは再起動します",
+    "Instalando la actualización; la app se reiniciará",
+  ],
+  "Restarting to install the update…": [
+    "正在重启以安装更新…",
+    "正在重新啟動以安裝更新…",
+    "インストールのため再起動しています…",
+    "Reiniciando para instalar la actualización…",
+  ],
+  "Installing the update into {path}, then restarting": [
+    "将更新安装到 {path}，然后重启",
+    "將更新安裝到 {path}，然後重新啟動",
+    "{path} にインストールして再起動します",
+    "Instalando la actualización en {path} y reiniciando",
+  ],
+  "Update downloaded. It will be installed in {path}.": [
+    "更新已下载，将安装到 {path}。",
+    "更新已下載，將安裝到 {path}。",
+    "アップデートをダウンロードしました。{path} にインストールします。",
+    "Actualización descargada. Se instalará en {path}.",
+  ],
+  "Update downloaded. Restart to finish installing.": [
+    "更新已下载，重启即可完成安装。",
+    "更新已下載，重新啟動即可完成安裝。",
+    "アップデートをダウンロードしました。再起動でインストールが完了します。",
+    "Actualización descargada. Reinicia para terminar.",
+  ],
+  "Latest version {version} · {size}": [
+    "最新版本 {version} · {size}",
+    "最新版本 {version} · {size}",
+    "最新バージョン {version} · {size}",
+    "Última versión {version} · {size}",
+  ],
+  "You're on the latest version ({version})": [
+    "已是最新版本（{version}）",
+    "已是最新版本（{version}）",
+    "最新バージョンです（{version}）",
+    "Ya tienes la última versión ({version})",
+  ],
+  "Updated to {version}": ["已更新到 {version}", "已更新到 {version}", "{version} に更新しました", "Actualizado a {version}"],
+  "The update to {version} did not take effect: still on {current}.": [
+    "更新到 {version} 没有生效，当前仍是 {current}。",
+    "更新到 {version} 沒有生效，目前仍是 {current}。",
+    "{version} への更新が反映されていません（現在 {current}）。",
+    "La actualización a {version} no surtió efecto: sigues en {current}.",
+  ],
+  "The app did not restart. Quit and reopen it to finish installing.": [
+    "应用没有自动重启，退出后重新打开即可完成安装。",
+    "應用程式沒有自動重新啟動，結束後重新開啟即可完成安裝。",
+    "アプリが再起動しませんでした。終了して開き直すとインストールが完了します。",
+    "La app no se reinició. Ciérrala y vuelve a abrirla para terminar.",
+  ],
+  "Update log": ["更新日志", "更新日誌", "アップデートログ", "Registro de actualización"],
   "Check for updates": ["检查更新", "檢查更新", "アップデートを確認", "Buscar actualizaciones"],
   "Checking for updates…": ["正在检查更新…", "正在檢查更新…", "アップデートを確認しています…", "Buscando actualizaciones…"],
   "You're on the latest version": ["已是最新版本", "已是最新版本", "最新バージョンです", "Ya tienes la última versión"],
@@ -252,19 +316,12 @@ export const MESSAGES: Record<string, MessageRow> = {
   "Downloading {percent}%": ["正在下载 {percent}%", "正在下載 {percent}%", "ダウンロード中 {percent}%", "Descargando {percent}%"],
   "Click to restart and install": ["点击后重启并安装", "點擊後重新啟動並安裝", "クリックで再起動してインストール", "Haz clic para reiniciar e instalar"],
   "Update failed": ["更新失败", "更新失敗", "アップデートに失敗しました", "La actualización falló"],
-  "Update downloaded. Click the button to restart.": [
-    "更新已下载，点击左侧按钮重启完成安装",
-    "更新已下載，點擊左側按鈕重新啟動完成安裝",
-    "アップデートをダウンロードしました。左のボタンから再起動してください",
-    "Actualización descargada. Usa el botón para reiniciar.",
-  ],
   "The update was downloaded and shown in the Finder: {path}": [
     "更新已下载，已在 Finder 中显示：{path}",
     "更新已下載，已在 Finder 中顯示：{path}",
     "アップデートをダウンロードし、Finder で表示しました：{path}",
     "La actualización se descargó y se muestra en el Finder: {path}",
   ],
-  "Latest version {version}": ["最新版本 {version}", "最新版本 {version}", "最新バージョン {version}", "Última versión {version}"],
   "No published release yet": ["还没有已发布的版本", "還沒有已發布的版本", "公開されたリリースがまだありません", "Todavía no hay ninguna versión publicada"],
 
   // ---------------------------------------------------------------- storage
@@ -539,6 +596,7 @@ export const MESSAGES: Record<string, MessageRow> = {
   "Importing Markdown…": ["正在导入 Markdown…", "正在匯入 Markdown…", "Markdown を読み込んでいます…", "Importando Markdown…"],
   "Imported {name}: {summary}": ["已导入「{name}」：{summary}", "已匯入「{name}」：{summary}", "「{name}」を読み込みました：{summary}", "Se importó «{name}»: {summary}"],
   "Imported {count} documents": ["已导入 {count} 篇文档", "已匯入 {count} 篇文件", "{count} 件のドキュメントを読み込みました", "Se importaron {count} documentos"],
+  "Imported {name} as plain text": ["「{name}」不是 Novion 文档 JSON，已按纯文本导入", "「{name}」不是 Novion 文件 JSON，已按純文字匯入", "「{name}」は Novion のドキュメント JSON ではないため、プレーンテキストとして読み込みました", "«{name}» no es un JSON de documento de Novion; se importó como texto sin formato"],
   "{name}: {message}": ["「{name}」：{message}", "「{name}」：{message}", "「{name}」：{message}", "«{name}»: {message}"],
 
   // ---------------------------------------------------------------- headings
@@ -642,5 +700,17 @@ export const MESSAGES: Record<string, MessageRow> = {
   "The update file is unexpectedly large, so the download was cancelled.": ["更新包大小异常，下载已取消。", "更新套件大小異常，下載已取消。", "アップデートのサイズが異常なため中止しました。", "El archivo de actualización es demasiado grande y se canceló la descarga."],
   "The downloaded update does not match its published checksum, so it was rejected.": ["下载的更新与公布的校验和不一致，已拒绝安装。", "下載的更新與公布的校驗和不一致，已拒絕安裝。", "ダウンロードした更新のチェックサムが一致しないため拒否しました。", "La actualización descargada no coincide con su suma de comprobación y se rechazó."],
   "This build cannot install updates automatically.": ["当前构建无法自动安装更新。", "目前建置無法自動安裝更新。", "このビルドは自動インストールに対応していません。", "Esta compilación no puede instalar actualizaciones automáticamente."],
+  "The update could not be written to disk. Check the update log.": [
+    "无法把更新写入磁盘，请查看更新日志。",
+    "無法將更新寫入磁碟，請查看更新日誌。",
+    "アップデートをディスクに書き込めませんでした。更新ログを確認してください。",
+    "No se pudo escribir la actualización en el disco. Revisa el registro.",
+  ],
+  "The installer could not run. Check the update log.": [
+    "安装程序无法运行，请查看更新日志。",
+    "安裝程式無法執行，請查看更新日誌。",
+    "インストーラーを起動できませんでした。更新ログを確認してください。",
+    "No se pudo ejecutar el instalador. Revisa el registro.",
+  ],
   "The update state is unavailable. Restart the app and try again.": ["更新状态不可用，请重启应用后重试。", "更新狀態不可用，請重新啟動應用程式後重試。", "更新状態を取得できません。アプリを再起動して再試行してください。", "El estado de la actualización no está disponible. Reinicia la app."],
 };

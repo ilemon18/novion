@@ -15,11 +15,11 @@
 | **Sidebar UI** | `src/components/sidebar/Sidebar.tsx`, `TreeList.tsx`, `TreeRow.tsx` |
 | **Sidebar menus** | `src/components/sidebar/node-actions.ts` (one action list for `⋮` + right-click), `NodeContextMenu.tsx`, `src/components/ui/float-menu.tsx` (fixed-position, no popper) |
 | **New-node targets** | `src/lib/tree-targets.ts` (system groups / trash / archive never host new nodes) |
-| **In-app updates** | `src-tauri/src/update.rs` (GitHub Releases check/download/install), `src/store/update.ts`, `src/components/editor/UpdateButton.tsx` |
+| **In-app updates** | `src-tauri/src/update.rs` (GitHub Releases check/download/install), `src/store/update.ts` (state machine), `src/lib/update-view.ts` (one status → label/icon/tone mapping, shared by both buttons), `src/components/editor/UpdateButton.tsx` |
 | **Editor UI** | `src/components/editor/DocView.tsx`, `DocEditor.tsx`, `DocTitle.tsx` |
 | **Slash menu** | `src/components/editor/SlashMenu.tsx`, `extensions/slash-command.ts` |
 | **Block types** | `src/components/editor/slash-items.ts` (23 types) |
-| **Inline formatting** | `src/components/editor/EditorBubbleMenu.tsx` (marks, colours, links, tables) |
+| **Inline formatting** | `src/components/editor/EditorBubbleMenu.tsx` (portal + placement), `bubble/` — `body.tsx` (composition), `parts.tsx` (ToolButton/Panel/Sep), `blocks.tsx`, `colors.tsx`, `link.tsx`, `table.tsx`, `signature.ts` (re-render fingerprint) |
 | **Custom nodes** | `src/components/editor/extensions/` — `callout`, `toggle`, `toc`, `bookmark`, `math`, `image` (resize/caption), `code-block` (language picker) |
 | **Shortcuts** | `src/lib/keybindings.ts` (single registry; `shortcutHint()` feeds the palette) |
 | **Command palette** | `src/components/CommandPalette.tsx`, `src/lib/commands.ts` |
@@ -185,10 +185,24 @@ release job) — served by the release CDN, so it costs **no** GitHub API quota.
 release has no manifest does it fall back to `api.github.com/repos/ilemon18/novion/releases/latest`
 (60 req/h/IP unauthenticated). No release yet ⇒ `hasRelease: false`, so the header button stays
 hidden. Assets are `novion-macos-X.Y.Z.dmg` / `novion-win-X.Y.Z.exe`; `latest.json` also carries
-size + SHA-256, which `update_download` verifies before the bundle can be installed. The installer
-replaces the `.app` the binary was started from (a build under `src-tauri/target/` falls back to
-"show in Finder"). The repository must be public — an unauthenticated request cannot read a
-private repo's releases. `latest.json` is never committed: it describes one specific build.
+size + SHA-256, which `update_download` verifies before the bundle can be installed. The
+repository must be public — an unauthenticated request cannot read a private repo's releases.
+`latest.json` is never committed: it describes one specific build.
+
+**Installing an update** (`update_install`) never guesses. It writes `update-pending.json` (the
+version it asked for) and starts a detached helper — `/bin/sh` on macOS, PowerShell on Windows —
+which waits for this process to exit, verifies the unpacked bundle's version, swaps it in, logs
+every step to `update.log` (`app_log_dir`), and reopens the app, including reopening the *old*
+build when any step fails. `update_startup_report` reads that marker on the next launch, so an
+installer that ran and changed nothing says so instead of looking like nothing happened.
+macOS installs into the running bundle when its folder is writable, otherwise into `/Applications`
+then `~/Applications` — an app opened from the downloaded dmg (a read-only volume, or a Gatekeeper
+`AppTranslocation` path) updates itself instead of falling back to "show in Finder"; the stale copy
+moves to the Trash. Windows runs the NSIS installer through a generated `.bat` (`/S /D=<dir>`, last
+and unquoted), waits for it, and only then relaunches. A build under `src-tauri/target/` is never
+replaced by a release bundle. The UI has exactly these states and one button each:
+`检查更新 → 下载更新 → 42% → 重启更新 → 正在安装…`, plus `重试` on failure and an
+「更新日志」link.
 
 ## Performance Notes
 

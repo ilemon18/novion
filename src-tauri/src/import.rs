@@ -46,6 +46,8 @@ pub struct ImportStats {
     pub target_name: String,
     /// first few errors, shown in the toast when the import was partial
     pub messages: Vec<String>,
+    /// documents created from JSON that was not a Novion document (kept as text)
+    pub plain_text: usize,
 }
 
 /// Opens the native folder picker. Returns `None` when the user cancels.
@@ -124,6 +126,168 @@ pub async fn import_markdown_text<R: Runtime>(
     stats.docs += 1;
     let _ = node;
     finish(&paths, &mut ws, stats).await
+}
+
+/// Imports a document that was exported as JSON (`export_doc(…, "json")`).
+///
+/// A dropped `.json` file is either a Novion document — the `DocFile` written by
+/// the exporter — or something else entirely. A recognisable document keeps its
+/// blocks and its title; anything else still becomes a document, with the raw
+/// text kept paragraph by paragraph, so dropping the wrong file never loses
+/// content and never fails.
+#[tauri::command]
+pub async fn import_json_text<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+    text: String,
+    parent_id: Option<String>,
+) -> AppResult<ImportStats> {
+    let paths = Paths::new(workspace_root(&app)?);
+    let mut ws = crate::workspace::load(&paths).await?;
+
+    let parsed = parse_json_document(&name, &text);
+    let mut stats = ImportStats::default();
+    add_doc(
+        &paths,
+        &mut ws,
+        parent_id.as_deref(),
+        parsed.title,
+        parsed.content,
+    )
+    .await?;
+    stats.docs += 1;
+    if parsed.plain_text {
+        stats.plain_text += 1;
+    }
+    finish(&paths, &mut ws, stats).await
+}
+
+struct ParsedJson {
+    title: String,
+    content: serde_json::Value,
+    /// the file was not a Novion document and survives as plain paragraphs
+    plain_text: bool,
+}
+
+/// Larger files are never handed to the JSON parser: they are kept as text.
+const MAX_JSON_BYTES: usize = 16 * 1024 * 1024;
+
+/// Plain-text fallback never grows past this, otherwise a multi-megabyte file
+/// would turn into an editor document that is slow to open for no benefit.
+const MAX_PLAIN_TEXT_CHARS: usize = 200_000;
+
+fn parse_json_document(name: &str, text: &str) -> ParsedJson {
+    let fallback = clean_title(name);
+    if text.len() > MAX_JSON_BYTES {
+        return ParsedJson {
+            title: fallback,
+            content: plain_text_doc(text),
+            plain_text: true,
+        };
+    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
+        return ParsedJson {
+            title: fallback,
+            content: plain_text_doc(text),
+            plain_text: true,
+        };
+    };
+
+    let Some(content) = document_content(&value) else {
+        return ParsedJson {
+            title: fallback,
+            content: plain_text_doc(text),
+            plain_text: true,
+        };
+    };
+
+    // the exported title is the document's own name; the file name is only a
+    // fallback for exports that carry an empty one
+    let title = value
+        .get("title")
+        .and_then(|title| title.as_str())
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .map(|title| title.chars().take(160).collect::<String>())
+        .unwrap_or(fallback);
+
+    ParsedJson {
+        title,
+        content,
+        plain_text: false,
+    }
+}
+
+/// Extracts the blocks from either shape the exporter and the editor use:
+/// `{ id, title, …, content: { type: "doc", content: [...] } }` or a bare
+/// `{ type: "doc", content: [...] }`. Everything else is `None`.
+fn document_content(value: &serde_json::Value) -> Option<serde_json::Value> {
+    let outer = value.as_object()?;
+    let inner = match outer.get("content") {
+        Some(inner) if inner.is_object() => inner,
+        _ => value, // a bare TipTap document
+    };
+    let inner = inner.as_object()?;
+
+    match inner.get("type").and_then(|kind| kind.as_str()) {
+        Some("doc") => {}
+        _ => return None,
+    }
+
+    let blocks: Vec<serde_json::Value> = inner
+        .get("content")
+        .and_then(|blocks| blocks.as_array())?
+        .iter()
+        .filter(|block| {
+            block
+                .get("type")
+                .and_then(|kind| kind.as_str())
+                .is_some_and(|kind| !kind.is_empty())
+        })
+        .cloned()
+        .collect();
+
+    Some(if blocks.is_empty() {
+        empty_doc()
+    } else {
+        serde_json::json!({ "type": "doc", "content": blocks })
+    })
+}
+
+/// The raw text as readable paragraphs: one per line, blank lines kept as empty
+/// paragraphs, long files cut off with a marker instead of freezing the editor.
+fn plain_text_doc(text: &str) -> serde_json::Value {
+    if text.trim().is_empty() {
+        return empty_doc();
+    }
+    let truncated = text.chars().count() > MAX_PLAIN_TEXT_CHARS;
+    let body: String = if truncated {
+        text.chars().take(MAX_PLAIN_TEXT_CHARS).collect()
+    } else {
+        text.to_string()
+    };
+
+    let mut blocks: Vec<serde_json::Value> = body
+        .lines()
+        .map(|line| {
+            if line.trim().is_empty() {
+                serde_json::json!({ "type": "paragraph" })
+            } else {
+                serde_json::json!({
+                    "type": "paragraph",
+                    "content": [{ "type": "text", "text": line }]
+                })
+            }
+        })
+        .collect();
+    if truncated {
+        blocks.push(serde_json::json!({
+            "type": "paragraph",
+            "content": [{ "type": "text", "text": "…" }]
+        }));
+    }
+
+    serde_json::json!({ "type": "doc", "content": blocks })
 }
 
 async fn finish(
@@ -535,6 +699,82 @@ mod tests {
             .any(|n| n.name == "第二篇" && n.parent_id.as_deref() == Some(sub.id.as_str())));
 
         let _ = tokio::fs::remove_dir_all(&paths.root).await;
+    }
+
+    #[tokio::test]
+    async fn imports_an_exported_document_json() {
+        let paths = temp_paths();
+        paths.ensure_dirs().await.unwrap();
+        let mut ws = Workspace::default();
+
+        let text = serde_json::json!({
+            "id": "d_old",
+            "title": "周报",
+            "createdAt": 1,
+            "updatedAt": 2,
+            "schemaVersion": 1,
+            "content": {
+                "type": "doc",
+                "content": [
+                    { "type": "paragraph", "content": [{ "type": "text", "text": "正文" }] }
+                ]
+            }
+        })
+        .to_string();
+
+        let parsed = parse_json_document("周报.json", &text);
+        assert!(!parsed.plain_text);
+        assert_eq!(parsed.title, "周报");
+        add_doc(&paths, &mut ws, None, parsed.title, parsed.content)
+            .await
+            .unwrap();
+
+        let node = ws.nodes.last().expect("new document node");
+        assert_eq!(node.name, "周报");
+        // the exported id is never reused, so two copies can coexist
+        assert_ne!(node.id, "d_old");
+        let doc = crate::atomic::read_json::<DocFile>(&paths.doc_file(&node.id).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(doc.content["content"][0]["type"], "paragraph");
+        assert_eq!(doc.content["content"][0]["content"][0]["text"], "正文");
+
+        let _ = tokio::fs::remove_dir_all(&paths.root).await;
+    }
+
+    #[test]
+    fn json_without_a_title_falls_back_to_the_file_name() {
+        let text = serde_json::json!({
+            "content": { "type": "doc", "content": [{ "type": "paragraph" }] }
+        })
+        .to_string();
+        let parsed = parse_json_document("随手记.json", &text);
+        assert_eq!(parsed.title, "随手记");
+        assert!(!parsed.plain_text);
+    }
+
+    #[test]
+    fn foreign_json_keeps_its_text() {
+        // valid JSON, but not a Novion document
+        let parsed = parse_json_document("data.json", "{\n  \"a\": 1\n}");
+        assert!(parsed.plain_text);
+        assert_eq!(parsed.title, "data");
+        let blocks = parsed.content["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 3, "one paragraph per line: {blocks:?}");
+        assert_eq!(blocks[1]["content"][0]["text"], "  \"a\": 1");
+
+        // broken JSON is kept the same way
+        let broken = parse_json_document("broken.json", "{ not json");
+        assert!(broken.plain_text);
+        assert_eq!(broken.content["content"][0]["content"][0]["text"], "{ not json");
+    }
+
+    #[test]
+    fn empty_json_becomes_an_empty_document() {
+        let parsed = parse_json_document("empty.json", "");
+        assert!(parsed.plain_text);
+        assert_eq!(parsed.content["type"], "doc");
+        assert_eq!(parsed.content["content"][0]["type"], "paragraph");
     }
 
     #[test]

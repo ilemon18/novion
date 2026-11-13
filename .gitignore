@@ -5,6 +5,9 @@ release
 *.local
 .DS_Store
 
+# marketing site (untracked by design)
+website
+
 # rust / tauri
 src-tauri/target
 src-tauri/gen

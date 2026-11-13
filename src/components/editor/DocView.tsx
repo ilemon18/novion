@@ -18,7 +18,7 @@ import { useT } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { formatShortcut, isWindows } from "@/lib/platform";
+import { formatShortcut } from "@/lib/platform";
 import { absolutizeContent, relativizeContent, serializeContent } from "./doc-content";
 import { DocActionButton } from "./DocAction";
 import { DocEditor, type OutlineItem } from "./DocEditor";
@@ -383,7 +383,7 @@ export default function DocView({ docId }: { docId: string }) {
           />
         )}
         <div ref={scrollRef} className="doc-scroll scroller scroll-pane flex-1">
-          <div className={cn("mx-auto w-full max-w-[860px] px-8 pb-[18vh]", isWindows ? "pt-6" : "pt-[42px]")}>
+          <div className="mx-auto w-full max-w-[860px] px-8 pb-[18vh] pt-[42px]">
             {(trashed || completed) && (
               <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2 text-[12.5px] text-muted-foreground">
                 <span className="min-w-0 flex-1 leading-relaxed">
@@ -610,8 +610,12 @@ export default function DocView({ docId }: { docId: string }) {
           </div>
         </div>
 
+        {/* The first 42px of the column are reserved for this strip, on every
+            platform, so the pill can never sit on the breadcrumb row. Windows
+            used to start the row at 24px, which left the pill on top of the
+            pin / find / outline / ⋮ buttons on a narrow window. */}
         {!findOpen && (
-          <div className="pointer-events-none absolute right-5 top-[13px] z-10 flex items-center gap-3">
+          <div className="pointer-events-none absolute right-5 top-[13px] z-30 flex items-center gap-3">
             <UpdateButton />
             <SaveIndicator saveKey={docKey} />
           </div>

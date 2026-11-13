@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
-import { Download, FolderOpen, RotateCw } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, errorMessage } from "@/lib/tauri";
 import { useUpdate } from "@/store/update";
 import { useUi } from "@/store/ui";
+import { cn } from "@/lib/utils";
+import {
+  runUpdateAction,
+  updateAction,
+  updateDetail,
+  type UpdateView,
+} from "@/lib/update-view";
 import { useT } from "@/i18n";
 
 /** Where the name plate points. Kept here so the URL is stated once. */
@@ -21,9 +28,9 @@ export function AboutSection() {
   const info = useUpdate((s) => s.info);
   const percent = useUpdate((s) => s.percent);
   const error = useUpdate((s) => s.error);
-  const check = useUpdate((s) => s.check);
-  const download = useUpdate((s) => s.download);
-  const install = useUpdate((s) => s.install);
+  const installedTo = useUpdate((s) => s.installedTo);
+  const logPath = useUpdate((s) => s.logPath);
+  const revealLog = useUpdate((s) => s.revealLog);
 
   useEffect(() => {
     let alive = true;
@@ -39,19 +46,18 @@ export function AboutSection() {
     };
   }, []);
 
-  const checking = status === "checking";
-  const busy = checking || status === "downloading";
+  /**
+   * One button for the whole update flow: it names the next step and nothing
+   * else on this panel does the same thing. "检查更新" → "下载更新" →
+   * "重启更新" → "正在安装…". The label and the line under it come from the
+   * same helper the header pill uses, so the two never offer different steps.
+   */
+  const view: UpdateView = { status, info, percent, error, installedTo, version };
+  const action = updateAction(view, t);
+  const detail = updateDetail(view, t);
+  const busy = action.kind === "wait";
 
-  /** One line of state under the buttons — never a silent "nothing happened". */
-  const detail = (() => {
-    if (checking) return t("Checking for updates…");
-    if (status === "downloading") return t("Downloading {percent}%", { percent });
-    if (status === "ready") return t("Update downloaded. Click the button to restart.");
-    if (status === "available" && info) return t("Latest version {version}", { version: info.latest });
-    if (status === "uptodate" && info && !info.hasRelease) return t("No published release yet");
-    if (status === "error") return error ?? t("Update failed");
-    return null;
-  })();
+  const Icon = action.icon;
 
   return (
     <div className="flex flex-col items-center pt-10">
@@ -83,22 +89,21 @@ export function AboutSection() {
       ) : null}
 
       <div className="mt-5 flex items-center gap-2">
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void check(true)}>
-          <RotateCw className={busy ? "size-3.5 animate-spin" : "size-3.5"} />
-          {t("Check for updates")}
+        <Button
+          size="sm"
+          variant={status === "ready" ? "default" : "outline"}
+          disabled={busy}
+          onClick={() => runUpdateAction(action.kind)}
+        >
+          <Icon
+            className={cn(
+              "size-3.5",
+              action.motion === "spin" && "animate-spin",
+              action.motion === "pulse" && "animate-pulse",
+            )}
+          />
+          {action.label}
         </Button>
-        {status === "available" && (
-          <Button size="sm" onClick={() => void download()}>
-            <Download className="size-3.5" />
-            {t("Download")}
-          </Button>
-        )}
-        {status === "ready" && (
-          <Button size="sm" onClick={() => void install()}>
-            <RotateCw className="size-3.5" />
-            {t("Restart to update")}
-          </Button>
-        )}
         <Button
           size="sm"
           variant="outline"
@@ -118,6 +123,17 @@ export function AboutSection() {
           {detail}
         </div>
       ) : null}
+
+      {logPath ? (
+        <button
+          type="button"
+          onClick={() => void revealLog()}
+          className="mt-1.5 rounded-md px-1.5 text-[11px] text-muted-foreground underline-offset-2 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          {t("Update log")}
+        </button>
+      ) : null}
     </div>
   );
 }
+

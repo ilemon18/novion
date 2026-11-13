@@ -33,6 +33,8 @@ const DATA_FILES = [
   "src/components/sidebar/BuiltinSections.tsx",
   "src/components/editor/SaveIndicator.tsx",
   "src/components/editor/EditorBubbleMenu.tsx",
+  "src/components/editor/bubble/blocks.tsx",
+  "src/components/editor/bubble/colors.tsx",
   "src/components/editor/VersionHistoryDialog.tsx",
   "src/components/editor/extensions/callout.ts",
   "src/components/editor/extensions/doc-link.ts",

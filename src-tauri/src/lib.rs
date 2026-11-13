@@ -74,6 +74,7 @@ pub fn run() {
             import::pick_import_folder,
             import::import_markdown,
             import::import_markdown_text,
+            import::import_json_text,
             import::parse_markdown_body,
             history::list_doc_versions,
             history::restore_doc_version,
@@ -86,6 +87,8 @@ pub fn run() {
             update::update_check,
             update::update_download,
             update::update_install,
+            update::update_startup_report,
+            update::update_reveal_log,
         ])
         .setup(|app| {
             // the storage choice must be readable before the first command runs

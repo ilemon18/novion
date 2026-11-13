@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/store/workspace";
 import { useStorage } from "@/store/storage";
 import { startUpdateWatcher } from "@/store/update";
-import { importDroppedMarkdown } from "@/lib/import-actions";
+import { importDroppedFiles, isImportableFile } from "@/lib/import-actions";
 import { applyTheme, useUi } from "@/store/ui";
 import { installLongPressWindowDrag } from "@/lib/window-drag";
 import { formatShortcut, isWindows } from "@/lib/platform";
@@ -150,13 +150,12 @@ export default function App() {
   }, []);
 
   /**
-   * Dropping `.md` files anywhere imports them; images keep going to the
-   * editor's own drop handler. Capture phase + stopPropagation, so a note
-   * dropped on the sidebar does not also start a tree drag.
+   * Dropping `.md` / `.json` files anywhere imports them into the folder that is
+   * selected in the sidebar; images keep going to the editor's own drop handler.
+   * Capture phase + stopPropagation, so a note dropped on the sidebar does not
+   * also start a tree drag.
    */
   useEffect(() => {
-    const isMarkdown = (name: string) => /\.(md|markdown)$/i.test(name);
-
     const onDragOver = (event: DragEvent) => {
       const items = Array.from(event.dataTransfer?.items ?? []);
       if (!items.some((item) => item.kind === "file")) return;
@@ -165,12 +164,11 @@ export default function App() {
     };
 
     const onDrop = (event: DragEvent) => {
-      const files = Array.from(event.dataTransfer?.files ?? []);
-      const markdown = files.filter((file) => isMarkdown(file.name));
-      if (!markdown.length) return; // images: leave them to the editor
+      const files = Array.from(event.dataTransfer?.files ?? []).filter(isImportableFile);
+      if (!files.length) return; // images: leave them to the editor
       event.preventDefault();
       event.stopPropagation();
-      void importDroppedMarkdown(markdown);
+      void importDroppedFiles(files);
     };
 
     window.addEventListener("dragover", onDragOver);
@@ -218,7 +216,7 @@ export default function App() {
             </div>
           )}
           {!ready ? (
-            <div className={cn("mx-auto w-full max-w-[860px] space-y-3 px-8", isWindows ? "pt-3" : "pt-[52px]")}>
+            <div className="mx-auto w-full max-w-[860px] space-y-3 px-8 pt-[42px]">
               <Skeleton className="h-8 w-56" />
               <Skeleton className="h-4 w-[70%]" />
               <Skeleton className="h-4 w-[55%]" />
@@ -226,7 +224,7 @@ export default function App() {
           ) : selectedDocId ? (
             <Suspense
               fallback={
-                <div className={cn("mx-auto w-full max-w-[860px] space-y-3 px-8", isWindows ? "pt-3" : "pt-[52px]")}>
+                <div className="mx-auto w-full max-w-[860px] space-y-3 px-8 pt-[42px]">
                   <Skeleton className="h-8 w-56" />
                   <Skeleton className="h-4 w-[70%]" />
                 </div>

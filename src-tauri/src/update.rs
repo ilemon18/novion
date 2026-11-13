@@ -14,14 +14,31 @@
 //! existed.
 //!
 //! Flow: `update_check` → `update_download` (progress events) → `update_install`
-//! (a detached helper script swaps the `.app` once this process has exited).
+//! (a detached helper replaces the bundle once this process has exited) →
+//! `update_startup_report` on the next launch.
+//!
+//! Installing is where updates normally die silently, so everything about it is
+//! designed to be *checked* rather than trusted:
+//!
+//! * The helper waits for this process to be gone, unpacks, **verifies the
+//!   version it unpacked**, swaps the bundle through a sibling directory, and
+//!   relaunches — including relaunching the *old* build when any step fails.
+//! * It writes every step to `update.log` (see [`log_path`]); the UI can reveal
+//!   that file, so a failure is never a mystery again.
+//! * `update_install` leaves an `update-pending.json` marker naming the version
+//!   it asked for. The next launch compares it with the running version and
+//!   reports a mismatch, which is the only way to notice an installer that ran
+//!   and did nothing (the Windows case).
+//! * On macOS the update is installed into whichever of the running bundle,
+//!   `/Applications` or `~/Applications` is writable. An app opened straight
+//!   from the downloaded `.dmg` therefore updates itself instead of saying
+//!   "cannot install from here".
 //!
 //! Security: only `https` URLs on GitHub hosts are downloaded, the expected
 //! byte count *and* the SHA-256 from the manifest are verified, and nothing is
 //! executed before the user asks for it. There is no code-signing check yet —
 //! see the note in `release/README.md`.
 
-#[cfg(target_os = "macos")]
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -44,9 +61,17 @@ const USER_AGENT: &str = concat!("Novion/", env!("CARGO_PKG_VERSION"));
 const PROGRESS_EVENT: &str = "update:progress";
 /// A sanity bound: the bundle is ~20 MB, so anything near this is not us.
 const MAX_ASSET_BYTES: u64 = 400 * 1024 * 1024;
-/// How long the helper script waits for this process to disappear before it
-/// gives up (it is spawned right before the app exits, so this is generous).
+/// How long the helper waits for this process to disappear before it gives up
+/// (it is spawned right before the app exits, so this is generous).
 const INSTALL_EXIT_MS: u64 = 600;
+/// What the helper did, step by step. Rotated like the client error log, so a
+/// helper stuck in a loop cannot fill the disk.
+const LOG_FILE: &str = "update.log";
+const LOG_MAX_BYTES: u64 = 256 * 1024;
+/// Written by `update_install` and read once by the launch that follows it: it
+/// names the version the helper was asked to install, so a launch that still
+/// runs the old build can say so instead of looking like nothing happened.
+const PENDING_FILE: &str = "update-pending.json";
 
 /// Path of the download that `update_install` should apply.
 #[derive(Default)]
@@ -108,7 +133,42 @@ pub struct InstallOutcome {
     /// "restart" = the helper replaces the bundle and relaunches the app;
     /// "manual" = the file was revealed in the file manager instead
     pub mode: &'static str,
+    /// the downloaded bundle
     pub path: String,
+    /// the `.app` (macOS) that will hold the update; empty for "manual"
+    pub installed_to: String,
+    /// where this build runs from, when the update lands somewhere else (an app
+    /// opened from the downloaded `.dmg` installs into `~/Applications`, for
+    /// instance); empty when the bundle is replaced in place
+    pub previous: String,
+    pub log_path: String,
+}
+
+/// What the launch after an install attempt can say about it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateReport {
+    /// version the helper was asked to install
+    pub attempted: String,
+    /// version actually running now
+    pub current: String,
+    /// false when the swap did not take: this launch is still the old build
+    pub ok: bool,
+    pub installed_to: String,
+    pub previous: String,
+    pub log_path: String,
+}
+
+/// `update-pending.json`. Same fields as [`UpdateReport`] plus the timestamp,
+/// because the file outlives the process that wrote it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingUpdate {
+    attempted: String,
+    installed_to: String,
+    previous: String,
+    log_path: String,
+    at: u64,
 }
 
 // --------------------------------------------------------------- GitHub JSON
@@ -322,6 +382,85 @@ fn sanitize_file_name(raw: &str) -> String {
     } else {
         name
     }
+}
+
+/// `~/Library/Logs/app.novion.desktop/update.log` on macOS,
+/// `%LOCALAPPDATA%\app.novion.desktop\logs\update.log` on Windows.
+fn log_path<R: Runtime>(app: &AppHandle<R>) -> PathBuf {
+    let dir = app
+        .path()
+        .app_log_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("novion-logs"));
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join(LOG_FILE)
+}
+
+fn write_log<R: Runtime>(app: &AppHandle<R>, message: &str) {
+    let file = log_path(app);
+    if let Ok(meta) = std::fs::metadata(&file) {
+        if meta.len() > LOG_MAX_BYTES {
+            let _ = std::fs::remove_file(&file);
+        }
+    }
+    if let Ok(mut handle) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file)
+    {
+        let _ = writeln!(
+            handle,
+            "[{}] {}",
+            crate::models::now_ms(),
+            message.trim()
+        );
+    }
+}
+
+fn pending_file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join(PENDING_FILE))
+}
+
+/// Removes the marker, so a helper that never started cannot be reported as a
+/// failed install on the next launch.
+fn clear_pending<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(file) = pending_file(app) {
+        let _ = std::fs::remove_file(file);
+    }
+}
+
+fn write_pending<R: Runtime>(app: &AppHandle<R>, pending: &PendingUpdate) {
+    let Some(file) = pending_file(app) else {
+        return;
+    };
+    if let Some(dir) = file.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(text) = serde_json::to_vec_pretty(pending) {
+        let _ = std::fs::write(&file, text);
+    }
+}
+
+/// `v0.0.2` and `0.0.2` name the same build; anything else must match exactly.
+fn versions_equal(left: &str, right: &str) -> bool {
+    let normalize = |value: &str| value.trim().trim_start_matches(['v', 'V']).to_string();
+    normalize(left) == normalize(right)
+}
+
+/// Fills the `@@NAME@@` placeholders of a helper script.
+///
+/// The scripts are shell/PowerShell source with braces, quotes and `$` all over
+/// them, so they are kept as plain templates and substituted here instead of
+/// being pushed through `format!`, where every `{` would need escaping.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn fill(template: &str, values: &[(&str, String)]) -> String {
+    let mut out = template.to_string();
+    for (key, value) in values {
+        out = out.replace(key, value);
+    }
+    out
 }
 
 // ------------------------------------------------------------------- commands
@@ -611,12 +750,15 @@ pub async fn update_download<R: Runtime>(
     Ok(target.to_string_lossy().to_string())
 }
 
-/// Installs the downloaded bundle. On macOS a detached script replaces the
-/// running `.app` after this process exits and relaunches it.
+/// Installs the downloaded bundle. A detached helper replaces the bundle after
+/// this process exits and relaunches the app.
 #[tauri::command]
 pub async fn update_install<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, UpdateState>,
+    // version from `latest.json`; the helper refuses to install anything else,
+    // so a mismatched or leftover download cannot be applied quietly
+    version: Option<String>,
 ) -> AppResult<InstallOutcome> {
     let archive = state
         .0
@@ -628,14 +770,28 @@ pub async fn update_install<R: Runtime>(
         return Err(AppError::new("update_not_ready", "更新文件已被删除，请重新下载"));
     }
 
+    let current = app.package_info().version.to_string();
+    let expected = version
+        .map(|value| value.trim().trim_start_matches(['v', 'V']).to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| current.clone());
+    let log = log_path(&app).to_string_lossy().to_string();
+    write_log(
+        &app,
+        &format!(
+            "install requested: {current} -> {expected} ({})",
+            archive.display()
+        ),
+    );
+
     #[cfg(target_os = "macos")]
     {
-        return macos_install(&app, &archive);
+        return macos_install(&app, &archive, &expected, &log);
     }
 
     #[cfg(target_os = "windows")]
     {
-        return windows_install(&app, &archive);
+        return windows_install(&app, &archive, &expected, &log);
     }
 
     #[allow(unreachable_code)]
@@ -644,8 +800,66 @@ pub async fn update_install<R: Runtime>(
         Ok(InstallOutcome {
             mode: "manual",
             path: archive.to_string_lossy().to_string(),
+            installed_to: String::new(),
+            previous: String::new(),
+            log_path: log,
         })
     }
+}
+
+/// Reads (and clears) the marker left by `update_install`, so the launch after
+/// "restart to install" can tell the user whether the update actually took.
+///
+/// `None` = no install was attempted; `Some(report)` with `ok: false` = the
+/// helper ran but this launch is still the old build (the silent failure that
+/// made "restart and nothing changed" impossible to explain).
+#[tauri::command]
+pub async fn update_startup_report<R: Runtime>(
+    app: AppHandle<R>,
+) -> AppResult<Option<UpdateReport>> {
+    let Some(file) = pending_file(&app) else {
+        return Ok(None);
+    };
+    let Ok(bytes) = std::fs::read(&file) else {
+        return Ok(None);
+    };
+    // read once: a report shown twice would nag about a settled install
+    let _ = std::fs::remove_file(&file);
+    let Ok(pending) = serde_json::from_slice::<PendingUpdate>(&bytes) else {
+        return Ok(None);
+    };
+
+    let current = app.package_info().version.to_string();
+    let ok = versions_equal(&pending.attempted, &current);
+    write_log(
+        &app,
+        &format!(
+            "launch after install: wanted {} running {current} -> {}",
+            pending.attempted,
+            if ok { "ok" } else { "did not take effect" }
+        ),
+    );
+
+    Ok(Some(UpdateReport {
+        attempted: pending.attempted,
+        current,
+        ok,
+        installed_to: pending.installed_to,
+        previous: pending.previous,
+        log_path: pending.log_path,
+    }))
+}
+
+/// Reveals `update.log` in the file manager, so a failed install is
+/// diagnosable from inside the app (there is no console to read).
+#[tauri::command]
+pub async fn update_reveal_log<R: Runtime>(app: AppHandle<R>) -> AppResult<String> {
+    let file = log_path(&app);
+    if !file.exists() {
+        write_log(&app, "no update has run yet");
+    }
+    reveal(&app, &file)?;
+    Ok(file.to_string_lossy().to_string())
 }
 
 fn reveal<R: Runtime>(app: &AppHandle<R>, path: &Path) -> AppResult<()> {
@@ -666,21 +880,33 @@ fn bundle_root() -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
-/// True when the bundle can be replaced in place (not a read-only volume, not
-/// the developer build under `src-tauri/target`).
+/// A developer build under `src-tauri/target`: it must never be replaced by a
+/// release bundle, or `tauri dev` would lose the build it is running from.
 #[cfg(target_os = "macos")]
-fn bundle_is_replaceable(bundle: &Path) -> bool {
-    let normalized = bundle.to_string_lossy();
-    if normalized.contains("/src-tauri/target/") {
-        return false;
-    }
-    let Some(parent) = bundle.parent() else {
-        return false;
-    };
-    let probe = parent.join(".novion-update-write-test");
+fn is_dev_build(bundle: &Path) -> bool {
+    bundle.to_string_lossy().contains("/src-tauri/target/")
+}
+
+/// Gatekeeper runs an app opened from a quarantined location (a downloaded
+/// `.dmg`, `~/Downloads`) from a random read-only mount under
+/// `/private/var/folders/.../AppTranslocation/`. That path can never be
+/// replaced, and it is not where the user wants the app to live anyway.
+#[cfg(target_os = "macos")]
+fn is_translocated(bundle: &Path) -> bool {
+    bundle.to_string_lossy().contains("/AppTranslocation/")
+}
+
+/// True when `dir` accepts a new file.
+///
+/// The only honest test: a permission bit says nothing about a read-only volume
+/// or a sandbox, and creating the probe is how Sparkle decides the same thing.
+#[cfg(target_os = "macos")]
+fn dir_is_writable(dir: &Path) -> bool {
+    let probe = dir.join(format!(".novion-update-write-test-{}", std::process::id()));
     match std::fs::File::create(&probe) {
         Ok(mut file) => {
             let _ = file.write_all(b"ok");
+            drop(file);
             let _ = std::fs::remove_file(&probe);
             true
         }
@@ -688,143 +914,546 @@ fn bundle_is_replaceable(bundle: &Path) -> bool {
     }
 }
 
+/// Picks the `.app` the update should end up in, in order of preference:
+///
+/// 1. the bundle this build runs from, when its folder is writable — the normal
+///    case, and the only one that needs no copy;
+/// 2. `/Applications/<name>`, when `/Applications` is writable: the app was
+///    opened from the `.dmg` or from `~/Downloads`, and the user wants it in the
+///    place Spotlight and Launchpad show;
+/// 3. `~/Applications/<name>`, which needs no administrator password.
+///
+/// `None` means nothing is writable, which is the only case that still has to
+/// hand the file to the user.
+#[cfg(target_os = "macos")]
+fn choose_install_target(
+    current: &Path,
+    replace_in_place: bool,
+    applications: &Path,
+    user_applications: &Path,
+    writable: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    if replace_in_place {
+        return Some(current.to_path_buf());
+    }
+    let name = current
+        .file_name()
+        .map(|name| name.to_os_string())
+        .unwrap_or_else(|| "Novion.app".into());
+    for dir in [applications, user_applications] {
+        if !writable(dir) {
+            continue;
+        }
+        let candidate = dir.join(&name);
+        // the running bundle is never a candidate here: it was rejected above
+        if candidate == current {
+            continue;
+        }
+        return Some(candidate);
+    }
+    None
+}
+
 #[cfg(target_os = "macos")]
 fn sh_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+/// The helper that does the swap. It runs after the app has quit, so it must
+/// survive on its own: every step is logged, every failure reopens the app that
+/// is currently installed, and the extracted bundle is version-checked before
+/// it is allowed to replace anything.
 #[cfg(target_os = "macos")]
-fn macos_install<R: Runtime>(app: &AppHandle<R>, archive: &Path) -> AppResult<InstallOutcome> {
+const INSTALL_SCRIPT: &str = r#"#!/bin/sh
+# Written by Novion; deleted when it finishes. Log: @@LOG@@
+set -u
+LOG=@@LOG@@
+BUNDLE=@@BUNDLE@@
+SOURCE=@@SOURCE@@
+DMG=@@DMG@@
+EXPECTED=@@EXPECTED@@
+APP_PID=@@PID@@
+MNT=""
+STAGED="$BUNDLE.novion-new"
+BACKUP="$BUNDLE.novion-old"
+
+say() { printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >> "$LOG"; }
+
+open_app() {
+  if [ -d "$BUNDLE" ] && open "$BUNDLE" >> "$LOG" 2>&1; then return 0; fi
+  if [ -d "$SOURCE" ] && open "$SOURCE" >> "$LOG" 2>&1; then return 0; fi
+  say "could not reopen the app; it has to be started by hand"
+  return 1
+}
+
+detach() {
+  if [ -n "$MNT" ]; then
+    hdiutil detach -force -quiet "$MNT" >> "$LOG" 2>&1 || true
+    rmdir "$MNT" >/dev/null 2>&1 || true
+    MNT=""
+  fi
+}
+
+fail() {
+  say "FAILED: $*"
+  [ -d "$STAGED" ] && rm -rf "$STAGED"
+  detach
+  open_app
+  exit 1
+}
+
+say "--- installing $EXPECTED into $BUNDLE (running from $SOURCE)"
+
+waited=0
+while kill -0 "$APP_PID" 2>/dev/null; do
+  waited=$((waited + 1))
+  if [ "$waited" -gt 900 ]; then fail "the app was still running after three minutes"; fi
+  sleep 0.2
+done
+say "the app has quit"
+
+MNT=$(mktemp -d /tmp/novion-update.XXXXXX) || fail "no mount point could be created"
+mounted=0
+for attempt in 1 2 3; do
+  if hdiutil attach -nobrowse -noverify -quiet -mountpoint "$MNT" "$DMG" >> "$LOG" 2>&1; then
+    mounted=1
+    break
+  fi
+  say "mounting the downloaded dmg failed (attempt $attempt)"
+  sleep 1
+done
+[ "$mounted" = 1 ] || fail "the downloaded dmg could not be mounted"
+
+SRC=$(find "$MNT" -maxdepth 1 -name '*.app' -print 2>/dev/null | head -n 1)
+[ -n "${SRC:-}" ] || fail "the dmg contains no .app"
+
+say "unpacking $SRC"
+rm -rf "$STAGED"
+ditto "$SRC" "$STAGED" >> "$LOG" 2>&1 || fail "the new bundle could not be copied out of the dmg"
+detach
+
+VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+  "$STAGED/Contents/Info.plist" 2>/dev/null)
+if [ "${VERSION:-}" != "$EXPECTED" ]; then
+  fail "the dmg holds version '${VERSION:-unknown}', expected '$EXPECTED'"
+fi
+[ -d "$STAGED/Contents/MacOS" ] || fail "the new bundle has no Contents/MacOS"
+# the download came from the release CDN, not from Safari: nothing to quarantine
+xattr -dr com.apple.quarantine "$STAGED" >> "$LOG" 2>&1 || true
+
+# Swapped through a sibling directory: copying straight over the running app
+# would leave files from the old version behind, and removing it first would
+# leave the user with nothing if the copy failed.
+rm -rf "$BACKUP"
+if [ -d "$BUNDLE" ]; then
+  mv "$BUNDLE" "$BACKUP" >> "$LOG" 2>&1 || fail "the current app could not be moved aside"
+fi
+if ! mv "$STAGED" "$BUNDLE" >> "$LOG" 2>&1; then
+  [ -d "$BACKUP" ] && mv "$BACKUP" "$BUNDLE" >> "$LOG" 2>&1
+  fail "the new app could not be moved into place"
+fi
+rm -rf "$BACKUP"
+rm -f "$DMG" >> "$LOG" 2>&1 || true
+say "installed $EXPECTED into $BUNDLE"
+
+# The copy the app was started from (a mounted dmg, ~/Downloads) is stale now.
+# Moving it to the Trash keeps one Novion on the Mac and stays undoable.
+if [ "$SOURCE" != "$BUNDLE" ] && [ -d "$SOURCE" ]; then
+  trash="$HOME/.Trash"
+  if mkdir -p "$trash" 2>/dev/null \
+    && mv "$SOURCE" "$trash/$(basename "$SOURCE")-$(date +%s)" >> "$LOG" 2>&1; then
+    say "moved the old copy to the Trash: $SOURCE"
+  else
+    say "left the old copy in place: $SOURCE"
+  fi
+fi
+
+open_app
+rm -f "$0" 2>/dev/null || true
+exit 0
+"#;
+
+#[cfg(target_os = "macos")]
+fn macos_install<R: Runtime>(
+    app: &AppHandle<R>,
+    archive: &Path,
+    expected: &str,
+    log: &str,
+) -> AppResult<InstallOutcome> {
     let bundle = bundle_root().ok_or_else(|| {
         AppError::new("update_unavailable", "当前不是从 .app 启动的，无法自动安装更新")
     })?;
 
-    // a build under `src-tauri/target` or on a read-only volume: hand the file
-    // to the user instead of pretending to install it
-    if !bundle_is_replaceable(&bundle) {
+    let manual = |app: &AppHandle<R>| -> AppResult<InstallOutcome> {
         reveal(app, archive)?;
-        return Ok(InstallOutcome {
+        Ok(InstallOutcome {
             mode: "manual",
             path: archive.to_string_lossy().to_string(),
-        });
+            installed_to: String::new(),
+            previous: String::new(),
+            log_path: log.to_string(),
+        })
+    };
+
+    // a developer build is not the copy the user runs: hand the file over
+    if is_dev_build(&bundle) {
+        write_log(app, "refusing to replace a developer build in src-tauri/target");
+        return manual(app);
     }
 
-    // The bundle is swapped through a sibling directory: copying straight over
-    // the running app would leave files from the old version behind, and
-    // removing it first would leave the user with nothing if the copy fails.
-    let script = format!(
-        r#"#!/bin/sh
-set -e
-pid={pid}
-bundle={bundle}
-dmg={dmg}
-staged="$bundle.novion-new"
-backup="$bundle.novion-old"
-mnt="$(mktemp -d /tmp/novion-update.XXXXXX)"
-while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
-hdiutil attach -nobrowse -quiet -mountpoint "$mnt" "$dmg" >/dev/null
-src="$(find "$mnt" -maxdepth 1 -name '*.app' | head -n 1)"
-if [ -z "$src" ]; then
-  hdiutil detach -quiet "$mnt" >/dev/null 2>&1 || true
-  exit 1
-fi
-rm -rf "$staged"
-ditto "$src" "$staged"
-xattr -dr com.apple.quarantine "$staged" >/dev/null 2>&1 || true
-hdiutil detach -quiet "$mnt" >/dev/null 2>&1 || true
-rmdir "$mnt" >/dev/null 2>&1 || true
-rm -rf "$backup"
-if [ -d "$bundle" ]; then mv "$bundle" "$backup"; fi
-if ! mv "$staged" "$bundle"; then
-  if [ -d "$backup" ]; then mv "$backup" "$bundle"; fi
-  exit 1
-fi
-rm -rf "$backup"
-rm -f "$dmg"
-open "$bundle"
-"#,
-        pid = std::process::id(),
-        bundle = sh_quote(&bundle.to_string_lossy()),
-        dmg = sh_quote(&archive.to_string_lossy()),
+    // Translocation is why "the update does nothing" used to happen: the app
+    // runs from a read-only mount, so the in-place swap cannot work.
+    let in_place = !is_translocated(&bundle)
+        && bundle.parent().map(dir_is_writable).unwrap_or(false);
+    let applications = PathBuf::from("/Applications");
+    let user_applications = app
+        .path()
+        .home_dir()
+        .map(|home| home.join("Applications"))
+        .unwrap_or_else(|_| PathBuf::from("Applications"));
+    // created up front so the writability probe below means something
+    let _ = std::fs::create_dir_all(&user_applications);
+
+    let Some(target) = choose_install_target(
+        &bundle,
+        in_place,
+        &applications,
+        &user_applications,
+        dir_is_writable,
+    ) else {
+        write_log(app, "no writable location; the user installs by hand");
+        return manual(app);
+    };
+
+    let previous = if target == bundle {
+        String::new()
+    } else {
+        write_log(
+            app,
+            &format!(
+                "the app runs from {} (read-only or translocated); installing into {}",
+                bundle.display(),
+                target.display()
+            ),
+        );
+        bundle.to_string_lossy().to_string()
+    };
+
+    write_pending(
+        app,
+        &PendingUpdate {
+            attempted: expected.to_string(),
+            installed_to: target.to_string_lossy().to_string(),
+            previous: previous.clone(),
+            log_path: log.to_string(),
+            at: crate::models::now_ms(),
+        },
+    );
+
+    let script = fill(
+        INSTALL_SCRIPT,
+        &[
+            ("@@LOG@@", sh_quote(log)),
+            ("@@BUNDLE@@", sh_quote(&target.to_string_lossy())),
+            ("@@SOURCE@@", sh_quote(&bundle.to_string_lossy())),
+            ("@@DMG@@", sh_quote(&archive.to_string_lossy())),
+            ("@@EXPECTED@@", sh_quote(expected)),
+            ("@@PID@@", std::process::id().to_string()),
+        ],
     );
 
     let script_path = std::env::temp_dir().join(format!("novion-update-{}.sh", std::process::id()));
-    let mut file = std::fs::File::create(&script_path)
-        .map_err(|err| AppError::io("写入安装脚本失败", err))?;
-    file.write_all(script.as_bytes())
-        .map_err(|err| AppError::io("写入安装脚本失败", err))?;
-    drop(file);
+    if let Err(err) = std::fs::write(&script_path, script) {
+        clear_pending(app);
+        return Err(AppError::new(
+            "update_write_failed",
+            format!("写入安装脚本失败：{err}"),
+        ));
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o700));
     }
+    write_log(app, &format!("helper script: {}", script_path.display()));
 
-    Command::new("/bin/sh")
+    // `/bin/sh script` rather than executing it: the file lives in the temp
+    // directory, which some setups mount noexec.
+    let spawned = Command::new("/bin/sh")
         .arg(&script_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn()
-        .map_err(|err| AppError::io("启动安装脚本失败", err))?;
+        .spawn();
+    if let Err(err) = spawned {
+        let _ = std::fs::remove_file(&script_path);
+        clear_pending(app);
+        return Err(AppError::new(
+            "update_install_failed",
+            format!("启动安装脚本失败：{err}"),
+        ));
+    }
 
-    // give the invoke result time to reach the webview, then quit so the
-    // script can swap the bundle out from under us
+    exit_for_install(app);
+
+    Ok(InstallOutcome {
+        mode: "restart",
+        path: archive.to_string_lossy().to_string(),
+        installed_to: target.to_string_lossy().to_string(),
+        previous,
+        log_path: log.to_string(),
+    })
+}
+
+/// Quits so the helper can replace the files it is running from, but not before
+/// the invoke reply has reached the webview.
+fn exit_for_install<R: Runtime>(app: &AppHandle<R>) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(INSTALL_EXIT_MS)).await;
         handle.exit(0);
     });
-
-    Ok(InstallOutcome {
-        mode: "restart",
-        path: archive.to_string_lossy().to_string(),
-    })
 }
 
 // -------------------------------------------------------------------- Windows
 
+/// The helper for `bundle.nsis`. Two things make or break it:
+///
+/// * NSIS cannot replace a running executable, so it waits for this process
+///   *and* the WebView2 children to be gone. The previous version launched the
+///   installer in the background and reopened the app immediately, so the old
+///   executable was running again before the installer could replace it — which
+///   is exactly "it restarts, and it is still the old version".
+/// * `/D=<dir>` must be the last parameter and must not be quoted, so the
+///   installer call goes through a one-line `.bat` instead of `cmd /c` from
+///   PowerShell, where the quoting rules quietly break paths with spaces.
+///
+/// It then checks that the file version actually changed, and reopens the app
+/// either way: a failed update must not leave the user without one.
 #[cfg(target_os = "windows")]
-fn windows_install<R: Runtime>(app: &AppHandle<R>, archive: &Path) -> AppResult<InstallOutcome> {
-    let exe = std::env::current_exe().ok();
-    let script = format!(
-        "@echo off\r\n\
-         :wait\r\n\
-         tasklist /FI \"PID eq {pid}\" | find \"{pid}\" >nul\r\n\
-         if not errorlevel 1 (\r\n\
-         \x20 timeout /t 1 /nobreak >nul\r\n\
-         \x20 goto wait\r\n\
-         )\r\n\
-         start \"\" \"{installer}\" /S\r\n\
-         if exist \"{exe}\" start \"\" \"{exe}\"\r\n\
-         del \"%~f0\"\r\n",
-        pid = std::process::id(),
-        installer = archive.to_string_lossy(),
-        exe = exe
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default(),
-    );
-    let script_path = std::env::temp_dir().join(format!("novion-update-{}.bat", std::process::id()));
-    std::fs::write(&script_path, script).map_err(|err| AppError::io("写入安装脚本失败", err))?;
+const INSTALL_SCRIPT_PS1: &str = r#"# Written by Novion; deleted when it finishes.
+$ErrorActionPreference = 'Stop'
+$Log = @@LOG@@
+$AppExe = @@EXE@@
+$AppDir = @@DIR@@
+$AppImage = @@IMAGE@@
+$Installer = @@INSTALLER@@
+$Expected = @@EXPECTED@@
+$AppPid = @@PID@@
+$BatPath = Join-Path ([IO.Path]::GetTempPath()) ('novion-install-' + [Guid]::NewGuid().ToString('N') + '.bat')
 
-    Command::new("cmd")
-        .args(["/C", &script_path.to_string_lossy()])
+function Write-Log([string]$Message) {
+  $line = "$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss') $Message"
+  try { Add-Content -LiteralPath $Log -Value $line -Encoding UTF8 } catch { }
+}
+
+function Start-App {
+  if (Test-Path -LiteralPath $AppExe) {
+    try { Start-Process -FilePath $AppExe | Out-Null; return $true } catch { }
+  }
+  return $false
+}
+
+function Get-AppVersion {
+  $item = Get-Item -LiteralPath $AppExe -ErrorAction SilentlyContinue
+  if (-not $item) { return '' }
+  return [string]$item.VersionInfo.ProductVersion
+}
+
+function Test-Writable([string]$Dir) {
+  try {
+    $probe = Join-Path $Dir ('.novion-write-test-' + [Guid]::NewGuid().ToString('N'))
+    [IO.File]::WriteAllText($probe, 'ok')
+    Remove-Item -LiteralPath $probe -Force
+    return $true
+  } catch { return $false }
+}
+
+function Wait-ForExit {
+  for ($i = 0; $i -lt 900; $i++) {
+    $byId = Get-Process -Id $AppPid -ErrorAction SilentlyContinue
+    $byName = Get-Process -Name $AppImage -ErrorAction SilentlyContinue
+    if (-not $byId -and -not $byName) { return $true }
+    Start-Sleep -Milliseconds 200
+  }
+  return $false
+}
+
+Write-Log "--- installing $Expected into $AppDir"
+
+if (-not (Wait-ForExit)) { Write-Log 'the app was still running after three minutes; installing anyway' }
+Write-Log 'the app has quit'
+
+if (-not (Test-Path -LiteralPath $Installer)) {
+  Write-Log "FAILED: the downloaded installer is gone: $Installer"
+  Start-App | Out-Null
+  exit 1
+}
+
+$before = Get-AppVersion
+Write-Log "installed version before: $before"
+
+# cmd reads a .bat in the OEM code page, not in UTF-8
+$oem = [Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage
+$bat = '@echo off' + "`r`n" + '"' + $Installer + '" /S /D=' + $AppDir + "`r`n"
+[IO.File]::WriteAllText($BatPath, $bat, [Text.Encoding]::GetEncoding($oem))
+
+$elevate = -not (Test-Writable $AppDir)
+if ($elevate) { Write-Log 'the program folder is not writable; asking for administrator rights' }
+
+$installerName = [IO.Path]::GetFileNameWithoutExtension($Installer)
+$installed = $false
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+  try {
+    if ($elevate) {
+      # `-Wait` is ignored together with `-Verb`, so the process is polled
+      Start-Process -FilePath $BatPath -Verb RunAs | Out-Null
+      Write-Log "attempt $attempt started elevated; waiting for the installer"
+      $saw = $false
+      for ($i = 0; $i -lt 600; $i++) {
+        if (Get-Process -Name $installerName -ErrorAction SilentlyContinue) { $saw = $true; break }
+        Start-Sleep -Milliseconds 200
+      }
+      if (-not $saw) { Write-Log "attempt $attempt never started (administrator prompt refused?)" }
+      for ($i = 0; $i -lt 900; $i++) {
+        if (-not (Get-Process -Name $installerName -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 200
+      }
+    } else {
+      $proc = Start-Process -FilePath $BatPath -Wait -PassThru -WindowStyle Hidden
+      Write-Log "installer attempt $attempt exited with code $($proc.ExitCode)"
+    }
+    # a silent NSIS install can return before the last file lands
+    for ($i = 0; $i -lt 100; $i++) {
+      if ((Get-AppVersion) -ne $before) { $installed = $true; break }
+      Start-Sleep -Milliseconds 200
+    }
+    if ($installed) { break }
+    Write-Log "attempt $attempt finished but the version is still $before"
+  } catch {
+    Write-Log "installer attempt $attempt failed: $($_.Exception.Message)"
+  }
+  Start-Sleep -Milliseconds 500
+}
+
+Remove-Item -LiteralPath $BatPath -Force -ErrorAction SilentlyContinue
+
+$after = Get-AppVersion
+Write-Log "installed version after: $after (expected $Expected)"
+if ($after -eq '') {
+  Write-Log 'the executable is missing after the install'
+} elseif (-not $after.StartsWith($Expected)) {
+  Write-Log 'the installed version does not match the update; the next launch reports it'
+}
+
+if (Start-App) { Write-Log 'reopened the app' } else { Write-Log 'could not reopen the app' }
+Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+"#;
+
+
+#[cfg(target_os = "windows")]
+fn ps_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_install<R: Runtime>(
+    app: &AppHandle<R>,
+    archive: &Path,
+    expected: &str,
+    log: &str,
+) -> AppResult<InstallOutcome> {
+    let exe = std::env::current_exe().map_err(|err| AppError::io("找不到当前程序", err))?;
+    let install_dir = exe
+        .parent()
+        .ok_or_else(|| AppError::new("update_unavailable", "找不到程序所在目录"))?
+        .to_path_buf();
+    // `Get-Process -Name` takes the image name without `.exe`
+    let image = exe
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Novion".to_string());
+
+    write_log(
+        app,
+        &format!(
+            "installing {expected} into {} (running from {})",
+            install_dir.display(),
+            exe.display()
+        ),
+    );
+    write_pending(
+        app,
+        &PendingUpdate {
+            attempted: expected.to_string(),
+            installed_to: install_dir.to_string_lossy().to_string(),
+            previous: String::new(),
+            log_path: log.to_string(),
+            at: crate::models::now_ms(),
+        },
+    );
+
+    let script = fill(
+        INSTALL_SCRIPT_PS1,
+        &[
+            ("@@LOG@@", ps_quote(log)),
+            ("@@EXE@@", ps_quote(&exe.to_string_lossy())),
+            ("@@DIR@@", ps_quote(&install_dir.to_string_lossy())),
+            ("@@IMAGE@@", ps_quote(&image)),
+            ("@@INSTALLER@@", ps_quote(&archive.to_string_lossy())),
+            ("@@EXPECTED@@", ps_quote(expected)),
+            ("@@PID@@", std::process::id().to_string()),
+        ],
+    );
+
+    let script_path = std::env::temp_dir().join(format!("novion-update-{}.ps1", std::process::id()));
+    // UTF-8 with BOM: PowerShell 5.1 reads a BOM-less script as ANSI and would
+    // mangle the paths.
+    let mut bytes = vec![0xEF, 0xBB, 0xBF];
+    bytes.extend_from_slice(script.as_bytes());
+    if let Err(err) = std::fs::write(&script_path, bytes) {
+        clear_pending(app);
+        return Err(AppError::new(
+            "update_write_failed",
+            format!("写入安装脚本失败：{err}"),
+        ));
+    }
+
+    let powershell = std::env::var("SystemRoot")
+        .map(|root| format!("{root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"))
+        .unwrap_or_else(|_| "powershell.exe".to_string());
+
+    let spawned = Command::new(&powershell)
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+        ])
+        .arg(&script_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn()
-        .map_err(|err| AppError::io("启动安装脚本失败", err))?;
+        .spawn();
+    if let Err(err) = spawned {
+        let _ = std::fs::remove_file(&script_path);
+        clear_pending(app);
+        return Err(AppError::new(
+            "update_install_failed",
+            format!("启动安装脚本失败：{err}"),
+        ));
+    }
 
-    let handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(INSTALL_EXIT_MS)).await;
-        handle.exit(0);
-    });
+    exit_for_install(app);
 
     Ok(InstallOutcome {
         mode: "restart",
         path: archive.to_string_lossy().to_string(),
+        installed_to: install_dir.to_string_lossy().to_string(),
+        previous: String::new(),
+        log_path: log.to_string(),
     })
 }
 
@@ -1041,5 +1670,94 @@ mod tests {
         assert!(!info.has_release);
         assert!(!info.available);
         assert_eq!(info.latest, "0.0.2");
+    }
+
+    #[test]
+    fn a_version_marker_matches_with_or_without_the_v_prefix() {
+        assert!(versions_equal("0.0.2", "v0.0.2"));
+        assert!(versions_equal(" v0.0.2 ", "0.0.2"));
+        assert!(!versions_equal("0.0.1", "0.0.2"));
+    }
+
+    #[test]
+    fn script_placeholders_are_substituted() {
+        let out = fill(
+            "open @@BUNDLE@@; echo '@@BUNDLE@@'",
+            &[("@@BUNDLE@@", "'/Applications/Novion.app'".to_string())],
+        );
+        assert!(!out.contains("@@"));
+        assert_eq!(out.matches("/Applications/Novion.app").count(), 2);
+    }
+
+    /// The three places an update may land, and what each case must pick.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_install_target_follows_what_is_writable() {
+        let current = Path::new("/Applications/Novion.app");
+        let apps = Path::new("/Applications");
+        let home_apps = Path::new("/Users/me/Applications");
+
+        // the normal case: replace what is running
+        assert_eq!(
+            choose_install_target(current, true, apps, home_apps, |_| true),
+            Some(current.to_path_buf())
+        );
+
+        // opened from the dmg, /Applications writable: install there, not back
+        // onto the read-only mount
+        let from_volume = Path::new("/Volumes/Novion/Novion.app");
+        assert_eq!(
+            choose_install_target(from_volume, false, apps, home_apps, |_| true),
+            Some(PathBuf::from("/Applications/Novion.app"))
+        );
+
+        // /Applications not writable (managed Mac): the home folder needs no
+        // password, so the update still installs
+        assert_eq!(
+            choose_install_target(from_volume, false, apps, home_apps, |dir| dir
+                != apps),
+            Some(PathBuf::from("/Users/me/Applications/Novion.app"))
+        );
+
+        // nothing writable: the caller hands the file to the user instead
+        assert_eq!(
+            choose_install_target(from_volume, false, apps, home_apps, |_| false),
+            None
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_install_target_never_collides_with_the_running_bundle() {
+        // a folder that already holds the running bundle is skipped: it was
+        // rejected above, and installing back onto it would be a no-op
+        assert_eq!(
+            choose_install_target(
+                Path::new("/Volumes/Novion/Novion.app"),
+                false,
+                Path::new("/Volumes/Novion"),
+                Path::new("/Users/me/Applications"),
+                |_| true
+            ),
+            Some(PathBuf::from("/Users/me/Applications/Novion.app"))
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_translocated_bundle_is_detected() {
+        assert!(is_translocated(Path::new(
+            "/private/var/folders/xy/T/AppTranslocation/1F2E/d/Novion.app"
+        )));
+        assert!(!is_translocated(Path::new("/Applications/Novion.app")));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_developer_build_is_never_replaced() {
+        assert!(is_dev_build(Path::new(
+            "/Users/me/novion/src-tauri/target/debug/bundle/macos/Novion.app"
+        )));
+        assert!(!is_dev_build(Path::new("/Applications/Novion.app")));
     }
 }

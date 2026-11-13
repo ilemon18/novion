@@ -26,6 +26,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  RotateCw,
   Search,
   Settings,
   SquareCheckBig,
@@ -42,6 +43,7 @@ import { exportDoc, exportWorkspace } from "@/lib/export-actions";
 import { importMarkdownFolder } from "@/lib/import-actions";
 import { getActiveEditor } from "@/lib/editor-registry";
 import { useUi } from "@/store/ui";
+import { useUpdate } from "@/store/update";
 import { parentForNewNode } from "@/lib/tree-targets";
 import { t } from "@/i18n";
 import {
@@ -569,6 +571,17 @@ export const COMMANDS: Command[] = [
     icon: Settings,
     available: () => true,
     run: () => ui().setSettingsOpen(true),
+  },
+  {
+    // only while a finished download is waiting: the palette is a third way to
+    // the same button, not a second update menu
+    id: "update.restart",
+    title: "Restart and install update",
+    keywords: ["update", "upgrade", "restart", "install", "更新", "升级", "重启", "安装"],
+    group: "settings",
+    icon: RotateCw,
+    available: () => useUpdate.getState().status === "ready",
+    run: () => void useUpdate.getState().install(),
   },
   {
     id: "settings.language",

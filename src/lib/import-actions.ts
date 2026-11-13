@@ -5,7 +5,7 @@ import { useWorkspace } from "@/store/workspace";
 import { t } from "@/i18n";
 
 /**
- * Markdown import entry points.
+ * Markdown / JSON import entry points.
  *
  * Both paths end in the same place: new folders and documents appended to the
  * workspace, images copied into `assets/`. Nothing is ever overwritten, so an
@@ -64,22 +64,41 @@ export async function importMarkdownFolder(): Promise<void> {
   }
 }
 
+const MARKDOWN_NAME = /\.(md|markdown|mdx)$/i;
+const JSON_NAME = /\.json$/i;
+
+/** Files the window accepts as a drop: Markdown notes and document JSON. */
+export function isImportableFile(file: File): boolean {
+  return MARKDOWN_NAME.test(file.name) || JSON_NAME.test(file.name);
+}
+
 /**
- * Imports Markdown dropped onto the window. The webview exposes dropped files as
+ * Imports files dropped onto the window. The webview exposes dropped files as
  * `File` objects without a path, so the text is read here and the title comes
  * from the file name.
+ *
+ * `.md` becomes a parsed Markdown document; `.json` is read as a document
+ * export and — when it is not one — still lands as a plain-text document, so a
+ * wrong file never fails the drop. Everything goes into the folder that is
+ * selected in the sidebar (the parent of the open note), matching a normal
+ * "new document" there.
  */
-export async function importDroppedMarkdown(files: File[]): Promise<void> {
-  if (!files.length) return;
+export async function importDroppedFiles(files: File[]): Promise<void> {
+  const importable = files.filter(isImportableFile);
+  if (!importable.length) return;
   await saveQueue.flushAll();
   const parent = parentForSelection();
   let docs = 0;
+  const plain: string[] = [];
   const failures: string[] = [];
-  for (const file of files) {
+  for (const file of importable) {
     try {
       const text = await file.text();
-      const stats = await api.importMarkdownText(file.name, text, parent);
+      const stats = JSON_NAME.test(file.name)
+        ? await api.importJsonText(file.name, text, parent)
+        : await api.importMarkdownText(file.name, text, parent);
       docs += stats.docs;
+      if (stats.plainText > 0) plain.push(file.name);
     } catch (err) {
       failures.push(t("{name}: {message}", { name: file.name, message: errorMessage(err) }));
     }
@@ -92,6 +111,10 @@ export async function importDroppedMarkdown(files: File[]): Promise<void> {
       tone: "success",
       actionLabel: failures.length ? undefined : t("Open"),
     });
+  }
+  // a JSON file that was not a document export is still imported, just as text
+  for (const name of plain.slice(0, 3)) {
+    ui.notify(t("Imported {name} as plain text", { name }), { tone: "info", timeout: 7000 });
   }
   if (failures.length) {
     ui.notify(failures.slice(0, 3).join(t("; ")), { tone: "error", timeout: 9000 });
