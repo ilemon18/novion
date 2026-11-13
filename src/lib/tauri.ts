@@ -258,7 +258,11 @@ export interface DocVersionBody {
 /** Thin typed wrapper around the Rust command surface. */
 export const api = {
   root: () => invoke<string>("get_workspace_root"),
-  /** `language` only matters on the very first run (it writes the welcome note). */
+  /**
+   * `language` only matters on the very first run, where it picks the welcome
+   * note. No caller passes one: that note is English for everyone, so the app
+   * opens the same way whatever the interface language happens to be.
+   */
   ensure: (language?: string) => invoke<Workspace>("ensure_workspace", { language }),
   createFolder: (parentId: string | null, name: string) =>
     invoke<CreatedFolder>("create_folder", { parentId, name }),

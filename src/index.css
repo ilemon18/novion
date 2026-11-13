@@ -876,8 +876,24 @@ html[data-platform="windows"] .scroll-pane {
   margin: 0.5em 0;
   padding: 0.55em 0.9em;
   border-radius: 8px;
-  border-left: 3px solid var(--callout-accent);
   background: color-mix(in srgb, var(--callout-accent) 8%, transparent);
+}
+/*
+ * The accent on the left is a drawn bar, not a `border-left`: a left border
+ * inherits the block's corner radius and bends at both ends. The bar is a
+ * straight rule of constant thickness, so the tinted panel can stay rounded
+ * without curving the accent.
+ */
+.callout-block::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  border-radius: 0;
+  background: var(--callout-accent);
+  pointer-events: none;
 }
 .callout-block[data-kind="tip"] {
   --callout-accent: var(--callout-tip);

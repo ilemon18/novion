@@ -7,6 +7,7 @@ import {
   type Workspace,
 } from "@/lib/tauri";
 import { canHostChildren } from "@/lib/tree-targets";
+import { readCollapsedFolders, saveCollapsedFolders } from "@/lib/folder-state";
 import { useUi } from "@/store/ui";
 
 export type { NodeKind, TreeNode };
@@ -149,6 +150,23 @@ function indexWorkspace(
 }
 
 /**
+ * Open state for a tree that was just loaded (or re-pointed at another root):
+ * every folder open, except the ones the user closed last time in this
+ * workspace. Folders the app has never shown start open, so new content is
+ * never hidden behind a remembered state that never mentioned it.
+ */
+function expandedFor(
+  rootPath: string,
+  nodes: Record<string, TreeNode>,
+  ws: Workspace,
+): Record<string, boolean> {
+  const closed = readCollapsedFolders(localStorage, rootPath, nodes);
+  const expanded: Record<string, boolean> = {};
+  for (const n of ws.nodes) if (n.kind === "folder") expanded[n.id] = !closed.has(n.id);
+  return expanded;
+}
+
+/**
  * Guards the create actions against a doubled click: the row is only appended
  * once the backend answered, so two rapid invocations both looked "unhandled"
  * and produced two documents.
@@ -179,10 +197,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   init: async () => {
     try {
       set({ busy: true });
-      const [root, ws] = await Promise.all([api.root(), api.ensure(useUi.getState().locale)]);
+      // no language on purpose: the first-run welcome note is English, not a
+      // translation of whatever interface language this profile uses
+      const [root, ws] = await Promise.all([api.root(), api.ensure()]);
       const { nodes, children } = indexWorkspace(ws, {});
-      const expanded: Record<string, boolean> = {};
-      for (const n of ws.nodes) if (n.kind === "folder") expanded[n.id] = true;
+      const expanded = expandedFor(root, nodes, ws);
       const firstDoc = ws.nodes.find(
         (n) =>
           n.kind === "doc" &&
@@ -219,8 +238,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   adopt: (ws, root) => {
     const { nodes, children } = indexWorkspace(ws, {});
-    const expanded: Record<string, boolean> = {};
-    for (const n of ws.nodes) if (n.kind === "folder") expanded[n.id] = true;
+    const expanded = expandedFor(root, nodes, ws);
     const firstDoc = ws.nodes.find(
       (n) =>
         n.kind === "doc" &&
@@ -490,6 +508,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     }
   },
 }));
+
+/**
+ * Folder open/closed state is a view preference, so it is saved on every change
+ * rather than on quit: localStorage writes a few bytes, and a toggle right
+ * before closing the app must not be lost to a debounce timer. Anything before
+ * the first successful load is ignored — there would be no tree to prune the
+ * stored ids against yet.
+ */
+useWorkspace.subscribe((state, prev) => {
+  if (state.expanded === prev.expanded) return;
+  if (!state.ready || !state.rootPath) return;
+  saveCollapsedFolders(localStorage, state.rootPath, state.nodes, state.expanded);
+});
 
 export const selectChildren = (parentId: string | null) => (s: WorkspaceState) =>
   s.children[parentId ?? ROOT] ?? [];

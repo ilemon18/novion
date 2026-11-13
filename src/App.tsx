@@ -255,9 +255,12 @@ export default function App() {
 
         {/* All transient messages share one top-centred stack: a notice and an
             error can then never overlap, every row is vertically centred, and
-            nothing covers the bottom of the document while it is being read. */}
+            nothing covers the bottom of the document while it is being read.
+            The stack sits above the dialog layer (portalled, z-50) on purpose:
+            a message about what just happened has to stay readable while the
+            settings drawer is open, so it gets its own layer at z-[60]. */}
         {(notice || error) && (
-          <div className="pointer-events-none fixed inset-x-0 top-3 z-50 flex flex-col items-center gap-2 px-4">
+          <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex flex-col items-center gap-2 px-4">
             {notice && (
               <div
                 key={notice.id}

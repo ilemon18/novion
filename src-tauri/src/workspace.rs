@@ -313,7 +313,10 @@ pub async fn ensure_workspace<R: Runtime>(
     if !exists {
         let now = now_ms();
         let doc_id = format!("d_{}", short_id());
-        // the first-run note follows the interface language chosen at boot
+        // the first-run note is English: the frontend deliberately passes no
+        // language, so a new setup reads the same in every locale. The
+        // translated welcome documents stay available for a caller that asks
+        // for its own language explicitly.
         let title = welcome_title(language.as_deref().unwrap_or("en"));
         let mut ws = Workspace {
             version: 1,

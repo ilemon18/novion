@@ -7,6 +7,9 @@ import { useUpdate } from "@/store/update";
 import { useUi } from "@/store/ui";
 import { useT } from "@/i18n";
 
+/** Where the name plate points. Kept here so the URL is stated once. */
+const PROJECT_URL = "https://github.com/ilemon18/novion";
+
 export function AboutSection() {
   const t = useT();
   const notify = useUi((s) => s.notify);
@@ -59,7 +62,20 @@ export function AboutSection() {
         height={72}
         className="size-[72px] rounded-[18px] shadow-sm"
       />
-      <div className="mt-3 text-[15px] font-semibold tracking-[-0.01em]">Novion</div>
+      {/* The name is the project link: it opens the repository in the system
+          browser, not inside the webview. */}
+      <button
+        type="button"
+        onClick={() =>
+          void api
+            .openUrl(PROJECT_URL)
+            .catch((err) => notify(errorMessage(err), { tone: "error", timeout: 6000 }))
+        }
+        title={PROJECT_URL}
+        className="mt-3 -mx-1.5 rounded-md px-1.5 text-[15px] font-semibold tracking-[-0.01em] outline-none transition-colors hover:text-brand focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        Novion
+      </button>
       {version ? (
         <div className="mt-1 text-[11.5px] tabular-nums text-muted-foreground">
           {t("Version {version}", { version })}
