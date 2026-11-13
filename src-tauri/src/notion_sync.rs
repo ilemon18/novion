@@ -561,10 +561,6 @@ impl<'a, R: Runtime> Ctx<'a, R> {
     fn node(&self, id: &str) -> Option<&Node> {
         self.ws.nodes.iter().find(|n| n.id == id)
     }
-
-    fn node_name(&self, id: &str) -> String {
-        self.node(id).map(|n| n.name.clone()).unwrap_or_default()
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

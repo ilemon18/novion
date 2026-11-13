@@ -41,6 +41,7 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -63,6 +64,7 @@ const PROGRESS_EVENT: &str = "update:progress";
 const MAX_ASSET_BYTES: u64 = 400 * 1024 * 1024;
 /// How long the helper waits for this process to disappear before it gives up
 /// (it is spawned right before the app exits, so this is generous).
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const INSTALL_EXIT_MS: u64 = 600;
 /// What the helper did, step by step. Rotated like the client error log, so a
 /// helper stuck in a loop cannot fill the disk.
@@ -425,12 +427,14 @@ fn pending_file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
 
 /// Removes the marker, so a helper that never started cannot be reported as a
 /// failed install on the next launch.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn clear_pending<R: Runtime>(app: &AppHandle<R>) {
     if let Some(file) = pending_file(app) {
         let _ = std::fs::remove_file(file);
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn write_pending<R: Runtime>(app: &AppHandle<R>, pending: &PendingUpdate) {
     let Some(file) = pending_file(app) else {
         return;
@@ -1207,6 +1211,7 @@ fn macos_install<R: Runtime>(
 
 /// Quits so the helper can replace the files it is running from, but not before
 /// the invoke reply has reached the webview.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn exit_for_install<R: Runtime>(app: &AppHandle<R>) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -1679,6 +1684,7 @@ mod tests {
         assert!(!versions_equal("0.0.1", "0.0.2"));
     }
 
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     #[test]
     fn script_placeholders_are_substituted() {
         let out = fill(
