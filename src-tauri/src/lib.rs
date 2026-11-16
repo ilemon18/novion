@@ -88,7 +88,6 @@ pub fn run() {
             update::update_download,
             update::update_install,
             update::update_startup_report,
-            update::update_reveal_log,
         ])
         .setup(|app| {
             // the storage choice must be readable before the first command runs

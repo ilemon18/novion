@@ -233,8 +233,6 @@ export interface InstallOutcome {
   installedTo: string;
   /** where this build runs from, when the update lands somewhere else */
   previous: string;
-  /** `update.log`, for when a helper fails without saying so */
-  logPath: string;
 }
 
 /** What the launch after an install attempt can say about it. */
@@ -247,7 +245,6 @@ export interface UpdateReport {
   ok: boolean;
   installedTo: string;
   previous: string;
-  logPath: string;
 }
 
 export type ExportFormat = "md" | "html" | "json";
@@ -373,8 +370,15 @@ export const api = {
     invoke<NotionSyncStats>("notion_sync_docs", { options }),
   notionResolveConflicts: (resolutions: NotionConflictResolution[]) =>
     invoke<NotionSyncStats>("notion_resolve_conflicts", { resolutions }),
-  /** Newest GitHub release, compared with this build. */
-  updateCheck: () => invoke<UpdateInfo>("update_check"),
+  /**
+   * Newest GitHub release, compared with this build.
+   *
+   * `deep` is for a check the user asked for: it lets the backend consult the
+   * release list when `latest.json` offers nothing, which is the only way to
+   * notice a newer release hiding behind an older "latest" pointer. Startup
+   * checks leave it off, so they stay quota-free.
+   */
+  updateCheck: (deep = false) => invoke<UpdateInfo>("update_check", { deep }),
   /** Streams the bundle into the app cache; resolves with its path. */
   updateDownload: (url: string, fileName: string, checksum: string) =>
     invoke<string>("update_download", { url, fileName, checksum }),
@@ -382,8 +386,6 @@ export const api = {
   updateInstall: (version: string) => invoke<InstallOutcome>("update_install", { version }),
   /** Reads (and clears) the marker an install attempt leaves behind. */
   updateStartupReport: () => invoke<UpdateReport | null>("update_startup_report"),
-  /** Reveals `update.log` and returns its path. */
-  updateRevealLog: () => invoke<string>("update_reveal_log"),
 };
 
 let rootCache: string | null = null;

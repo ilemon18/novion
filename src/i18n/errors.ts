@@ -42,8 +42,9 @@ export const ERROR_MESSAGES: Record<string, string> = {
   update_untrusted: "The update address was not a GitHub HTTPS address, so it was refused.",
   update_too_large: "The update file is unexpectedly large, so the download was cancelled.",
   update_checksum: "The downloaded update does not match its published checksum, so it was rejected.",
+  update_downgrade: "The downloaded update is older than the version you are running, so it was refused.",
   update_unavailable: "This build cannot install updates automatically.",
   update_state: "The update state is unavailable. Restart the app and try again.",
-  update_write_failed: "The update could not be written to disk. Check the update log.",
-  update_install_failed: "The installer could not run. Check the update log.",
+  update_write_failed: "The update could not be written to disk.",
+  update_install_failed: "The installer could not run.",
 };

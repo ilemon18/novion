@@ -23,8 +23,6 @@
 //! * The helper waits for this process to be gone, unpacks, **verifies the
 //!   version it unpacked**, swaps the bundle through a sibling directory, and
 //!   relaunches — including relaunching the *old* build when any step fails.
-//! * It writes every step to `update.log` (see [`log_path`]); the UI can reveal
-//!   that file, so a failure is never a mystery again.
 //! * `update_install` leaves an `update-pending.json` marker naming the version
 //!   it asked for. The next launch compares it with the running version and
 //!   reports a mismatch, which is the only way to notice an installer that ran
@@ -39,6 +37,7 @@
 //! executed before the user asks for it. There is no code-signing check yet —
 //! see the note in `release/README.md`.
 
+#[cfg(target_os = "macos")]
 use std::io::Write;
 use std::path::{Path, PathBuf};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -66,10 +65,6 @@ const MAX_ASSET_BYTES: u64 = 400 * 1024 * 1024;
 /// (it is spawned right before the app exits, so this is generous).
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 const INSTALL_EXIT_MS: u64 = 600;
-/// What the helper did, step by step. Rotated like the client error log, so a
-/// helper stuck in a loop cannot fill the disk.
-const LOG_FILE: &str = "update.log";
-const LOG_MAX_BYTES: u64 = 256 * 1024;
 /// Written by `update_install` and read once by the launch that follows it: it
 /// names the version the helper was asked to install, so a launch that still
 /// runs the old build can say so instead of looking like nothing happened.
@@ -143,7 +138,6 @@ pub struct InstallOutcome {
     /// opened from the downloaded `.dmg` installs into `~/Applications`, for
     /// instance); empty when the bundle is replaced in place
     pub previous: String,
-    pub log_path: String,
 }
 
 /// What the launch after an install attempt can say about it.
@@ -158,7 +152,6 @@ pub struct UpdateReport {
     pub ok: bool,
     pub installed_to: String,
     pub previous: String,
-    pub log_path: String,
 }
 
 /// `update-pending.json`. Same fields as [`UpdateReport`] plus the timestamp,
@@ -169,13 +162,12 @@ struct PendingUpdate {
     attempted: String,
     installed_to: String,
     previous: String,
-    log_path: String,
     at: u64,
 }
 
 // --------------------------------------------------------------- GitHub JSON
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct Release {
     #[serde(default)]
     tag_name: String,
@@ -189,8 +181,9 @@ struct Release {
     published_at: String,
     #[serde(default)]
     draft: bool,
+    /// GitHub's `latest` pointer follows *publishing* order, so the release list
+    /// is the only place where a real prerelease can be filtered out.
     #[serde(default)]
-    #[allow(dead_code)]
     prerelease: bool,
     #[serde(default)]
     assets: Vec<Asset>,
@@ -291,41 +284,106 @@ fn manifest_asset(manifest: &Manifest, platform: Platform) -> Option<&ManifestAs
     }
 }
 
-/// `1.2.0` > `1.1.9`, `v1.2.0` == `1.2.0`, and a release beats its prerelease.
-fn is_newer(candidate: &str, current: &str) -> bool {
-    fn parse(value: &str) -> (Vec<u64>, Option<String>) {
-        let trimmed = value.trim().trim_start_matches(['v', 'V']);
-        let (core, pre) = match trimmed.split_once('-') {
-            Some((core, pre)) => (core, Some(pre.to_ascii_lowercase())),
-            None => (trimmed, None),
-        };
-        let numbers = core
-            .split('.')
-            .map(|part| {
-                part.chars()
-                    .take_while(|c| c.is_ascii_digit())
-                    .collect::<String>()
-                    .parse::<u64>()
-                    .unwrap_or(0)
-            })
-            .collect();
-        (numbers, pre)
-    }
+/// One dot-separated identifier of a prerelease (`beta.2` → `Text("beta")`,
+/// `Num(2)`), kept so that numeric identifiers compare as numbers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PreId {
+    Num(u64),
+    Text(String),
+}
 
-    let (a, a_pre) = parse(candidate);
-    let (b, b_pre) = parse(current);
+/// Splits `v1.2.3-beta.1+build` into `[1, 2, 3]` and `[beta, 1]`.
+///
+/// Build metadata is dropped (semver: it takes no part in precedence) and a
+/// core field that does not start with a digit counts as 0, so a malformed
+/// version degrades to "older than expected" instead of panicking.
+fn split_version(value: &str) -> (Vec<u64>, Option<Vec<PreId>>) {
+    let trimmed = value.trim().trim_start_matches(['v', 'V']);
+    let trimmed = trimmed.split('+').next().unwrap_or("");
+    let (core, pre) = match trimmed.split_once('-') {
+        Some((core, pre)) => (core, Some(parse_prerelease(pre))),
+        None => (trimmed, None),
+    };
+    let numbers = core
+        .split('.')
+        .map(|part| {
+            part.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse::<u64>()
+                .unwrap_or(0)
+        })
+        .collect();
+    (numbers, pre)
+}
+
+fn parse_prerelease(raw: &str) -> Vec<PreId> {
+    raw.split('.')
+        .map(|id| {
+            let numeric = !id.is_empty() && id.chars().all(|c| c.is_ascii_digit());
+            if numeric {
+                // a 20-digit identifier overflows u64: saturate rather than
+                // silently calling two different prereleases equal
+                PreId::Num(id.parse::<u64>().unwrap_or(u64::MAX))
+            } else {
+                PreId::Text(id.to_ascii_lowercase())
+            }
+        })
+        .collect()
+}
+
+/// semver precedence for prerelease identifiers: numeric before alphanumeric,
+/// numerics numerically, alphanumerics by ASCII order, and a shorter set of
+/// otherwise equal identifiers sorts first (`1.0.0-alpha` < `1.0.0-alpha.1`).
+fn compare_prerelease(left: &[PreId], right: &[PreId]) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    for (a, b) in left.iter().zip(right.iter()) {
+        let ordering = match (a, b) {
+            (PreId::Num(x), PreId::Num(y)) => x.cmp(y),
+            (PreId::Num(_), PreId::Text(_)) => Ordering::Less,
+            (PreId::Text(_), PreId::Num(_)) => Ordering::Greater,
+            (PreId::Text(x), PreId::Text(y)) => x.cmp(y),
+        };
+        if ordering != Ordering::Equal {
+            return ordering;
+        }
+    }
+    left.len().cmp(&right.len())
+}
+
+/// Full version precedence: `1.2.0` > `1.1.9`, `v1.2.0` == `1.2.0`,
+/// `1.0.0-beta.10` > `1.0.0-beta.2`, and a release beats its prerelease.
+///
+/// A downgrade therefore compares as `Less`, which is what guards the install
+/// path: nothing older than the running build may ever replace it.
+fn compare_versions(left: &str, right: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (a, a_pre) = split_version(left);
+    let (b, b_pre) = split_version(right);
     for index in 0..a.len().max(b.len()) {
-        let left = a.get(index).copied().unwrap_or(0);
-        let right = b.get(index).copied().unwrap_or(0);
-        if left != right {
-            return left > right;
+        let x = a.get(index).copied().unwrap_or(0);
+        let y = b.get(index).copied().unwrap_or(0);
+        if x != y {
+            return x.cmp(&y);
         }
     }
     match (a_pre, b_pre) {
-        (None, Some(_)) => true,
-        (Some(_), None) => false,
-        (left, right) => left > right,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+        (Some(x), Some(y)) => compare_prerelease(&x, &y),
+        (None, None) => Ordering::Equal,
     }
+}
+
+/// True only when `candidate` is strictly newer than `current`.
+fn is_newer(candidate: &str, current: &str) -> bool {
+    compare_versions(candidate, current) == std::cmp::Ordering::Greater
+}
+
+/// True when `candidate` is strictly older, i.e. installing it would be a
+/// downgrade.
+fn is_older(candidate: &str, current: &str) -> bool {
+    compare_versions(candidate, current) == std::cmp::Ordering::Less
 }
 
 /// Only bundles served by GitHub over TLS are accepted.
@@ -386,38 +444,6 @@ fn sanitize_file_name(raw: &str) -> String {
     }
 }
 
-/// `~/Library/Logs/app.novion.desktop/update.log` on macOS,
-/// `%LOCALAPPDATA%\app.novion.desktop\logs\update.log` on Windows.
-fn log_path<R: Runtime>(app: &AppHandle<R>) -> PathBuf {
-    let dir = app
-        .path()
-        .app_log_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("novion-logs"));
-    let _ = std::fs::create_dir_all(&dir);
-    dir.join(LOG_FILE)
-}
-
-fn write_log<R: Runtime>(app: &AppHandle<R>, message: &str) {
-    let file = log_path(app);
-    if let Ok(meta) = std::fs::metadata(&file) {
-        if meta.len() > LOG_MAX_BYTES {
-            let _ = std::fs::remove_file(&file);
-        }
-    }
-    if let Ok(mut handle) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&file)
-    {
-        let _ = writeln!(
-            handle,
-            "[{}] {}",
-            crate::models::now_ms(),
-            message.trim()
-        );
-    }
-}
-
 fn pending_file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
     app.path()
         .app_config_dir()
@@ -447,10 +473,9 @@ fn write_pending<R: Runtime>(app: &AppHandle<R>, pending: &PendingUpdate) {
     }
 }
 
-/// `v0.0.2` and `0.0.2` name the same build; anything else must match exactly.
+/// `v0.0.2`, `0.0.2` and `0.0.2+build` name the same build.
 fn versions_equal(left: &str, right: &str) -> bool {
-    let normalize = |value: &str| value.trim().trim_start_matches(['v', 'V']).to_string();
-    normalize(left) == normalize(right)
+    compare_versions(left, right) == std::cmp::Ordering::Equal
 }
 
 /// Fills the `@@NAME@@` placeholders of a helper script.
@@ -473,16 +498,28 @@ fn fill(template: &str, values: &[(&str, String)]) -> String {
 ///
 /// Runs once at startup and whenever the user asks; an unauthenticated request
 /// is one of 60 per hour per IP, so the frontend throttles its own polling.
+///
+/// `deep` is what a *manual* check passes: when `latest.json` turns out to be at
+/// or below this build, the release list is consulted before saying "up to
+/// date". That costs one REST call, so it is never paid at startup — but it is
+/// the only way to notice a newer release when GitHub's `latest` pointer sits on
+/// an older one (a hotfix published for an old line moves it there, and then
+/// every client would keep comparing against the lower version forever).
 #[tauri::command]
-pub async fn update_check<R: Runtime>(app: AppHandle<R>) -> AppResult<UpdateInfo> {
+pub async fn update_check<R: Runtime>(app: AppHandle<R>, deep: Option<bool>) -> AppResult<UpdateInfo> {
     let current = app.package_info().version.to_string();
     let http = client()?;
+    let deep = deep.unwrap_or(false);
 
     // Preferred path: the manifest asset (release CDN, no API quota).
     // `None` means "this release has no manifest" — then the REST API below is
     // still consulted, which keeps older releases (v0.0.1) working.
     if let Some(manifest) = fetch_manifest(&http).await? {
-        return Ok(info_from_manifest(manifest, &current, current_platform()));
+        let info = info_from_manifest(manifest, &current, current_platform());
+        if info.available || !deep {
+            return Ok(info);
+        }
+        return Ok(deeper_answer(&http, info, &current).await);
     }
 
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
@@ -636,6 +673,68 @@ fn info_from_release(release: Release, current: &str, platform: Platform) -> Upd
     }
 }
 
+/// The highest release in a list, and only when it actually beats `current`.
+///
+/// Drafts are skipped (they are not downloadable) and so are prereleases: a
+/// beta must never be pushed at someone running a stable build, which is the
+/// same rule `releases/latest` follows. Pure, so the ordering can be tested.
+fn newest_published(releases: Vec<Release>, current: &str) -> Option<Release> {
+    releases
+        .into_iter()
+        .filter(|release| !release.draft && !release.prerelease)
+        .filter(|release| !release.tag_name.trim().is_empty())
+        .filter(|release| is_newer(&release.tag_name, current))
+        .max_by(|left, right| compare_versions(&left.tag_name, &right.tag_name))
+}
+
+/// `/releases?per_page=…` — the only endpoint that can name a version *higher*
+/// than whatever GitHub currently calls "latest".
+async fn fetch_releases(http: &reqwest::Client) -> AppResult<Vec<Release>> {
+    let url = format!("https://api.github.com/repos/{REPO}/releases?per_page=30");
+    let response = http
+        .get(url)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|err| network("连接 GitHub 失败", err))?;
+    if !response.status().is_success() {
+        return Err(AppError::new(
+            "update_network",
+            format!("GitHub 返回了 {}", response.status()),
+        ));
+    }
+    response
+        .json::<Vec<Release>>()
+        .await
+        .map_err(|err| network("解析 GitHub 返回内容失败", err))
+}
+
+/// Second opinion for a manual check whose manifest offered nothing.
+///
+/// Every failure here is deliberately swallowed: the manifest answer is already
+/// in hand, so an out-of-quota REST call must not turn "you are up to date" into
+/// a red error.
+async fn deeper_answer(
+    http: &reqwest::Client,
+    fallback: UpdateInfo,
+    current: &str,
+) -> UpdateInfo {
+    match fetch_releases(http).await {
+        Ok(releases) => match newest_published(releases, current) {
+            Some(release) => {
+                let info = info_from_release(release, current, current_platform());
+                if info.available {
+                    info
+                } else {
+                    fallback
+                }
+            }
+            None => fallback,
+        },
+        Err(_) => fallback,
+    }
+}
+
 /// Streams the bundle into the app cache directory and reports progress.
 #[tauri::command]
 pub async fn update_download<R: Runtime>(
@@ -779,23 +878,24 @@ pub async fn update_install<R: Runtime>(
         .map(|value| value.trim().trim_start_matches(['v', 'V']).to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| current.clone());
-    let log = log_path(&app).to_string_lossy().to_string();
-    write_log(
-        &app,
-        &format!(
-            "install requested: {current} -> {expected} ({})",
-            archive.display()
-        ),
-    );
+    // A downgrade is never what the user clicked: it is a stale manifest or a
+    // cached `UpdateInfo` from an earlier check. Refuse it here, once, where the
+    // bundle is about to be replaced, instead of trusting the caller.
+    if is_older(&expected, &current) {
+        return Err(AppError::new(
+            "update_downgrade",
+            format!("更新包是 {expected}，比当前版本 {current} 旧，已拒绝安装"),
+        ));
+    }
 
     #[cfg(target_os = "macos")]
     {
-        return macos_install(&app, &archive, &expected, &log);
+        return macos_install(&app, &archive, &expected);
     }
 
     #[cfg(target_os = "windows")]
     {
-        return windows_install(&app, &archive, &expected, &log);
+        return windows_install(&app, &archive, &expected);
     }
 
     #[allow(unreachable_code)]
@@ -806,7 +906,6 @@ pub async fn update_install<R: Runtime>(
             path: archive.to_string_lossy().to_string(),
             installed_to: String::new(),
             previous: String::new(),
-            log_path: log,
         })
     }
 }
@@ -835,14 +934,6 @@ pub async fn update_startup_report<R: Runtime>(
 
     let current = app.package_info().version.to_string();
     let ok = versions_equal(&pending.attempted, &current);
-    write_log(
-        &app,
-        &format!(
-            "launch after install: wanted {} running {current} -> {}",
-            pending.attempted,
-            if ok { "ok" } else { "did not take effect" }
-        ),
-    );
 
     Ok(Some(UpdateReport {
         attempted: pending.attempted,
@@ -850,20 +941,7 @@ pub async fn update_startup_report<R: Runtime>(
         ok,
         installed_to: pending.installed_to,
         previous: pending.previous,
-        log_path: pending.log_path,
     }))
-}
-
-/// Reveals `update.log` in the file manager, so a failed install is
-/// diagnosable from inside the app (there is no console to read).
-#[tauri::command]
-pub async fn update_reveal_log<R: Runtime>(app: AppHandle<R>) -> AppResult<String> {
-    let file = log_path(&app);
-    if !file.exists() {
-        write_log(&app, "no update has run yet");
-    }
-    reveal(&app, &file)?;
-    Ok(file.to_string_lossy().to_string())
 }
 
 fn reveal<R: Runtime>(app: &AppHandle<R>, path: &Path) -> AppResult<()> {
@@ -964,14 +1042,13 @@ fn sh_quote(value: &str) -> String {
 }
 
 /// The helper that does the swap. It runs after the app has quit, so it must
-/// survive on its own: every step is logged, every failure reopens the app that
+/// survive on its own: no output to inherit, every failure reopens the app that
 /// is currently installed, and the extracted bundle is version-checked before
 /// it is allowed to replace anything.
 #[cfg(target_os = "macos")]
 const INSTALL_SCRIPT: &str = r#"#!/bin/sh
-# Written by Novion; deleted when it finishes. Log: @@LOG@@
+# Written by Novion; deleted when it finishes.
 set -u
-LOG=@@LOG@@
 BUNDLE=@@BUNDLE@@
 SOURCE=@@SOURCE@@
 DMG=@@DMG@@
@@ -981,95 +1058,81 @@ MNT=""
 STAGED="$BUNDLE.novion-new"
 BACKUP="$BUNDLE.novion-old"
 
-say() { printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >> "$LOG"; }
-
 open_app() {
-  if [ -d "$BUNDLE" ] && open "$BUNDLE" >> "$LOG" 2>&1; then return 0; fi
-  if [ -d "$SOURCE" ] && open "$SOURCE" >> "$LOG" 2>&1; then return 0; fi
-  say "could not reopen the app; it has to be started by hand"
+  if [ -d "$BUNDLE" ] && open "$BUNDLE" >/dev/null 2>&1; then return 0; fi
+  if [ -d "$SOURCE" ] && open "$SOURCE" >/dev/null 2>&1; then return 0; fi
   return 1
 }
 
 detach() {
   if [ -n "$MNT" ]; then
-    hdiutil detach -force -quiet "$MNT" >> "$LOG" 2>&1 || true
+    hdiutil detach -force -quiet "$MNT" >/dev/null 2>&1 || true
     rmdir "$MNT" >/dev/null 2>&1 || true
     MNT=""
   fi
 }
 
 fail() {
-  say "FAILED: $*"
   [ -d "$STAGED" ] && rm -rf "$STAGED"
   detach
   open_app
   exit 1
 }
 
-say "--- installing $EXPECTED into $BUNDLE (running from $SOURCE)"
-
 waited=0
 while kill -0 "$APP_PID" 2>/dev/null; do
   waited=$((waited + 1))
-  if [ "$waited" -gt 900 ]; then fail "the app was still running after three minutes"; fi
+  if [ "$waited" -gt 900 ]; then fail; fi
   sleep 0.2
 done
-say "the app has quit"
 
-MNT=$(mktemp -d /tmp/novion-update.XXXXXX) || fail "no mount point could be created"
+MNT=$(mktemp -d /tmp/novion-update.XXXXXX) || fail
 mounted=0
 for attempt in 1 2 3; do
-  if hdiutil attach -nobrowse -noverify -quiet -mountpoint "$MNT" "$DMG" >> "$LOG" 2>&1; then
+  if hdiutil attach -nobrowse -noverify -quiet -mountpoint "$MNT" "$DMG" >/dev/null 2>&1; then
     mounted=1
     break
   fi
-  say "mounting the downloaded dmg failed (attempt $attempt)"
   sleep 1
 done
-[ "$mounted" = 1 ] || fail "the downloaded dmg could not be mounted"
+[ "$mounted" = 1 ] || fail
 
 SRC=$(find "$MNT" -maxdepth 1 -name '*.app' -print 2>/dev/null | head -n 1)
-[ -n "${SRC:-}" ] || fail "the dmg contains no .app"
+[ -n "${SRC:-}" ] || fail
 
-say "unpacking $SRC"
 rm -rf "$STAGED"
-ditto "$SRC" "$STAGED" >> "$LOG" 2>&1 || fail "the new bundle could not be copied out of the dmg"
+ditto "$SRC" "$STAGED" >/dev/null 2>&1 || fail
 detach
 
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
   "$STAGED/Contents/Info.plist" 2>/dev/null)
 if [ "${VERSION:-}" != "$EXPECTED" ]; then
-  fail "the dmg holds version '${VERSION:-unknown}', expected '$EXPECTED'"
+  fail
 fi
-[ -d "$STAGED/Contents/MacOS" ] || fail "the new bundle has no Contents/MacOS"
+[ -d "$STAGED/Contents/MacOS" ] || fail
 # the download came from the release CDN, not from Safari: nothing to quarantine
-xattr -dr com.apple.quarantine "$STAGED" >> "$LOG" 2>&1 || true
+xattr -dr com.apple.quarantine "$STAGED" >/dev/null 2>&1 || true
 
 # Swapped through a sibling directory: copying straight over the running app
 # would leave files from the old version behind, and removing it first would
 # leave the user with nothing if the copy failed.
 rm -rf "$BACKUP"
 if [ -d "$BUNDLE" ]; then
-  mv "$BUNDLE" "$BACKUP" >> "$LOG" 2>&1 || fail "the current app could not be moved aside"
+  mv "$BUNDLE" "$BACKUP" >/dev/null 2>&1 || fail
 fi
-if ! mv "$STAGED" "$BUNDLE" >> "$LOG" 2>&1; then
-  [ -d "$BACKUP" ] && mv "$BACKUP" "$BUNDLE" >> "$LOG" 2>&1
-  fail "the new app could not be moved into place"
+if ! mv "$STAGED" "$BUNDLE" >/dev/null 2>&1; then
+  [ -d "$BACKUP" ] && mv "$BACKUP" "$BUNDLE" >/dev/null 2>&1
+  fail
 fi
 rm -rf "$BACKUP"
-rm -f "$DMG" >> "$LOG" 2>&1 || true
-say "installed $EXPECTED into $BUNDLE"
+rm -f "$DMG" >/dev/null 2>&1 || true
 
 # The copy the app was started from (a mounted dmg, ~/Downloads) is stale now.
 # Moving it to the Trash keeps one Novion on the Mac and stays undoable.
 if [ "$SOURCE" != "$BUNDLE" ] && [ -d "$SOURCE" ]; then
   trash="$HOME/.Trash"
-  if mkdir -p "$trash" 2>/dev/null \
-    && mv "$SOURCE" "$trash/$(basename "$SOURCE")-$(date +%s)" >> "$LOG" 2>&1; then
-    say "moved the old copy to the Trash: $SOURCE"
-  else
-    say "left the old copy in place: $SOURCE"
-  fi
+  mkdir -p "$trash" 2>/dev/null \
+    && mv "$SOURCE" "$trash/$(basename "$SOURCE")-$(date +%s)" >/dev/null 2>&1
 fi
 
 open_app
@@ -1082,7 +1145,6 @@ fn macos_install<R: Runtime>(
     app: &AppHandle<R>,
     archive: &Path,
     expected: &str,
-    log: &str,
 ) -> AppResult<InstallOutcome> {
     let bundle = bundle_root().ok_or_else(|| {
         AppError::new("update_unavailable", "当前不是从 .app 启动的，无法自动安装更新")
@@ -1095,13 +1157,11 @@ fn macos_install<R: Runtime>(
             path: archive.to_string_lossy().to_string(),
             installed_to: String::new(),
             previous: String::new(),
-            log_path: log.to_string(),
         })
     };
 
     // a developer build is not the copy the user runs: hand the file over
     if is_dev_build(&bundle) {
-        write_log(app, "refusing to replace a developer build in src-tauri/target");
         return manual(app);
     }
 
@@ -1125,21 +1185,12 @@ fn macos_install<R: Runtime>(
         &user_applications,
         dir_is_writable,
     ) else {
-        write_log(app, "no writable location; the user installs by hand");
         return manual(app);
     };
 
     let previous = if target == bundle {
         String::new()
     } else {
-        write_log(
-            app,
-            &format!(
-                "the app runs from {} (read-only or translocated); installing into {}",
-                bundle.display(),
-                target.display()
-            ),
-        );
         bundle.to_string_lossy().to_string()
     };
 
@@ -1149,7 +1200,6 @@ fn macos_install<R: Runtime>(
             attempted: expected.to_string(),
             installed_to: target.to_string_lossy().to_string(),
             previous: previous.clone(),
-            log_path: log.to_string(),
             at: crate::models::now_ms(),
         },
     );
@@ -1157,7 +1207,6 @@ fn macos_install<R: Runtime>(
     let script = fill(
         INSTALL_SCRIPT,
         &[
-            ("@@LOG@@", sh_quote(log)),
             ("@@BUNDLE@@", sh_quote(&target.to_string_lossy())),
             ("@@SOURCE@@", sh_quote(&bundle.to_string_lossy())),
             ("@@DMG@@", sh_quote(&archive.to_string_lossy())),
@@ -1179,8 +1228,6 @@ fn macos_install<R: Runtime>(
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o700));
     }
-    write_log(app, &format!("helper script: {}", script_path.display()));
-
     // `/bin/sh script` rather than executing it: the file lives in the temp
     // directory, which some setups mount noexec.
     let spawned = Command::new("/bin/sh")
@@ -1205,7 +1252,6 @@ fn macos_install<R: Runtime>(
         path: archive.to_string_lossy().to_string(),
         installed_to: target.to_string_lossy().to_string(),
         previous,
-        log_path: log.to_string(),
     })
 }
 
@@ -1238,7 +1284,6 @@ fn exit_for_install<R: Runtime>(app: &AppHandle<R>) {
 #[cfg(target_os = "windows")]
 const INSTALL_SCRIPT_PS1: &str = r#"# Written by Novion; deleted when it finishes.
 $ErrorActionPreference = 'Stop'
-$Log = @@LOG@@
 $AppExe = @@EXE@@
 $AppDir = @@DIR@@
 $AppImage = @@IMAGE@@
@@ -1246,11 +1291,6 @@ $Installer = @@INSTALLER@@
 $Expected = @@EXPECTED@@
 $AppPid = @@PID@@
 $BatPath = Join-Path ([IO.Path]::GetTempPath()) ('novion-install-' + [Guid]::NewGuid().ToString('N') + '.bat')
-
-function Write-Log([string]$Message) {
-  $line = "$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss') $Message"
-  try { Add-Content -LiteralPath $Log -Value $line -Encoding UTF8 } catch { }
-}
 
 function Start-App {
   if (Test-Path -LiteralPath $AppExe) {
@@ -1284,19 +1324,14 @@ function Wait-ForExit {
   return $false
 }
 
-Write-Log "--- installing $Expected into $AppDir"
-
-if (-not (Wait-ForExit)) { Write-Log 'the app was still running after three minutes; installing anyway' }
-Write-Log 'the app has quit'
+Wait-ForExit | Out-Null
 
 if (-not (Test-Path -LiteralPath $Installer)) {
-  Write-Log "FAILED: the downloaded installer is gone: $Installer"
   Start-App | Out-Null
   exit 1
 }
 
 $before = Get-AppVersion
-Write-Log "installed version before: $before"
 
 # cmd reads a .bat in the OEM code page, not in UTF-8
 $oem = [Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage
@@ -1304,7 +1339,6 @@ $bat = '@echo off' + "`r`n" + '"' + $Installer + '" /S /D=' + $AppDir + "`r`n"
 [IO.File]::WriteAllText($BatPath, $bat, [Text.Encoding]::GetEncoding($oem))
 
 $elevate = -not (Test-Writable $AppDir)
-if ($elevate) { Write-Log 'the program folder is not writable; asking for administrator rights' }
 
 $installerName = [IO.Path]::GetFileNameWithoutExtension($Installer)
 $installed = $false
@@ -1313,20 +1347,16 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
     if ($elevate) {
       # `-Wait` is ignored together with `-Verb`, so the process is polled
       Start-Process -FilePath $BatPath -Verb RunAs | Out-Null
-      Write-Log "attempt $attempt started elevated; waiting for the installer"
-      $saw = $false
       for ($i = 0; $i -lt 600; $i++) {
-        if (Get-Process -Name $installerName -ErrorAction SilentlyContinue) { $saw = $true; break }
+        if (Get-Process -Name $installerName -ErrorAction SilentlyContinue) { break }
         Start-Sleep -Milliseconds 200
       }
-      if (-not $saw) { Write-Log "attempt $attempt never started (administrator prompt refused?)" }
       for ($i = 0; $i -lt 900; $i++) {
         if (-not (Get-Process -Name $installerName -ErrorAction SilentlyContinue)) { break }
         Start-Sleep -Milliseconds 200
       }
     } else {
-      $proc = Start-Process -FilePath $BatPath -Wait -PassThru -WindowStyle Hidden
-      Write-Log "installer attempt $attempt exited with code $($proc.ExitCode)"
+      Start-Process -FilePath $BatPath -Wait -WindowStyle Hidden | Out-Null
     }
     # a silent NSIS install can return before the last file lands
     for ($i = 0; $i -lt 100; $i++) {
@@ -1334,24 +1364,14 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
       Start-Sleep -Milliseconds 200
     }
     if ($installed) { break }
-    Write-Log "attempt $attempt finished but the version is still $before"
   } catch {
-    Write-Log "installer attempt $attempt failed: $($_.Exception.Message)"
   }
   Start-Sleep -Milliseconds 500
 }
 
 Remove-Item -LiteralPath $BatPath -Force -ErrorAction SilentlyContinue
 
-$after = Get-AppVersion
-Write-Log "installed version after: $after (expected $Expected)"
-if ($after -eq '') {
-  Write-Log 'the executable is missing after the install'
-} elseif (-not $after.StartsWith($Expected)) {
-  Write-Log 'the installed version does not match the update; the next launch reports it'
-}
-
-if (Start-App) { Write-Log 'reopened the app' } else { Write-Log 'could not reopen the app' }
+Start-App | Out-Null
 Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 "#;
@@ -1367,7 +1387,6 @@ fn windows_install<R: Runtime>(
     app: &AppHandle<R>,
     archive: &Path,
     expected: &str,
-    log: &str,
 ) -> AppResult<InstallOutcome> {
     let exe = std::env::current_exe().map_err(|err| AppError::io("找不到当前程序", err))?;
     let install_dir = exe
@@ -1380,21 +1399,12 @@ fn windows_install<R: Runtime>(
         .map(|stem| stem.to_string_lossy().to_string())
         .unwrap_or_else(|| "Novion".to_string());
 
-    write_log(
-        app,
-        &format!(
-            "installing {expected} into {} (running from {})",
-            install_dir.display(),
-            exe.display()
-        ),
-    );
     write_pending(
         app,
         &PendingUpdate {
             attempted: expected.to_string(),
             installed_to: install_dir.to_string_lossy().to_string(),
             previous: String::new(),
-            log_path: log.to_string(),
             at: crate::models::now_ms(),
         },
     );
@@ -1402,7 +1412,6 @@ fn windows_install<R: Runtime>(
     let script = fill(
         INSTALL_SCRIPT_PS1,
         &[
-            ("@@LOG@@", ps_quote(log)),
             ("@@EXE@@", ps_quote(&exe.to_string_lossy())),
             ("@@DIR@@", ps_quote(&install_dir.to_string_lossy())),
             ("@@IMAGE@@", ps_quote(&image)),
@@ -1458,7 +1467,6 @@ fn windows_install<R: Runtime>(
         path: archive.to_string_lossy().to_string(),
         installed_to: install_dir.to_string_lossy().to_string(),
         previous: String::new(),
-        log_path: log.to_string(),
     })
 }
 
@@ -1482,6 +1490,34 @@ mod tests {
         assert!(!is_newer("0.0.1", "0.1.0"));
         assert!(is_newer("1.0.0", "1.0.0-beta.1"));
         assert!(!is_newer("1.0.0-beta.2", "1.0.0"));
+    }
+
+    /// The case that produced "it keeps comparing against a lower version":
+    /// numbers are numbers, not strings.
+    #[test]
+    fn version_compare_reads_numbers_as_numbers() {
+        assert!(is_newer("0.0.10", "0.0.9"));
+        assert!(is_newer("0.10.0", "0.9.0"));
+        assert!(is_newer("10.0.0", "9.9.9"));
+        assert!(!is_newer("0.0.9", "0.0.10"));
+
+        // prerelease identifiers: numeric before alphanumeric, numerics by value
+        assert!(is_newer("1.0.0-beta.10", "1.0.0-beta.2"));
+        assert!(is_newer("1.0.0-rc.1", "1.0.0-beta.2"));
+        assert!(is_newer("1.0.0-beta", "1.0.0-alpha"));
+        assert!(is_newer("1.0.0-alpha.1", "1.0.0-alpha"));
+        assert!(!is_newer("1.0.0-alpha.1", "1.0.0-alpha.1"));
+
+        // build metadata takes no part in precedence
+        assert_eq!(compare_versions("1.2.3+build.5", "1.2.3"), std::cmp::Ordering::Equal);
+        assert_eq!(compare_versions("v0.0.5", "0.0.5.0"), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn a_downgrade_is_not_an_update() {
+        assert!(is_older("0.0.4", "0.0.5"));
+        assert!(!is_older("0.0.5", "0.0.5"));
+        assert!(!is_newer("0.0.4", "0.0.5"));
     }
 
     #[test]
@@ -1682,6 +1718,34 @@ mod tests {
         assert!(versions_equal("0.0.2", "v0.0.2"));
         assert!(versions_equal(" v0.0.2 ", "0.0.2"));
         assert!(!versions_equal("0.0.1", "0.0.2"));
+    }
+
+    /// `latest.json` can sit on an older version than the highest release:
+    /// GitHub's "latest" follows publishing order, not version order.
+    #[test]
+    fn the_newest_published_release_wins_over_the_latest_pointer() {
+        let tagged = |tag: &str, prerelease: bool, draft: bool| Release {
+            tag_name: tag.to_string(),
+            name: Some(tag.to_string()),
+            body: None,
+            html_url: format!("https://github.com/ilemon18/novion/releases/tag/{tag}"),
+            published_at: String::new(),
+            draft,
+            prerelease,
+            assets: vec![asset(&format!("novion-macos-{}.dmg", &tag[1..]))],
+        };
+
+        let releases = vec![
+            tagged("v0.0.10", false, false),
+            tagged("v0.0.9", false, false),
+            tagged("v0.0.11", true, false), // a beta must never be offered
+            tagged("v0.1.0", false, true),  // nor a draft
+        ];
+        let newest = newest_published(releases.clone(), "0.0.9").expect("0.0.10 is newer");
+        assert_eq!(newest.tag_name, "v0.0.10");
+
+        // nothing higher than what is running: no offer at all
+        assert!(newest_published(releases, "0.0.10").is_none());
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]

@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   updateDownload: vi.fn(),
   updateInstall: vi.fn(),
   updateStartupReport: vi.fn(),
-  updateRevealLog: vi.fn(),
   flushAll: vi.fn(),
 }));
 
@@ -24,7 +23,6 @@ vi.mock("@/lib/tauri", () => ({
     updateDownload: mocks.updateDownload,
     updateInstall: mocks.updateInstall,
     updateStartupReport: mocks.updateStartupReport,
-    updateRevealLog: mocks.updateRevealLog,
   },
   errorMessage: (err: unknown) => (err instanceof Error ? err.message : String(err)),
   onUpdateProgress: async () => () => undefined,
@@ -66,7 +64,6 @@ beforeEach(() => {
     percent: 0,
     error: null,
     installedTo: "",
-    logPath: "",
   });
 });
 
@@ -83,7 +80,6 @@ describe("the update flow behind the single button", () => {
       path: "/cache/updates/x.dmg",
       installedTo: "/Applications/Novion.app",
       previous: "",
-      logPath: "/logs/update.log",
     });
 
     await useUpdate.getState().check(true);
@@ -97,7 +93,6 @@ describe("the update flow behind the single button", () => {
     await useUpdate.getState().install();
     // the version the helper must verify travels with the click
     expect(mocks.updateInstall).toHaveBeenCalledWith("0.0.2");
-    expect(useUpdate.getState().logPath).toBe("/logs/update.log");
     expect(useUpdate.getState().installedTo).toBe("/Applications/Novion.app");
   });
 
@@ -145,7 +140,6 @@ describe("the update flow behind the single button", () => {
       path: "/cache/updates/x.dmg",
       installedTo: "",
       previous: "",
-      logPath: "/logs/update.log",
     });
 
     await useUpdate.getState().check(true);

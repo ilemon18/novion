@@ -308,7 +308,6 @@ export const MESSAGES: Record<string, MessageRow> = {
     "アプリが再起動しませんでした。終了して開き直すとインストールが完了します。",
     "La app no se reinició. Ciérrala y vuelve a abrirla para terminar.",
   ],
-  "Update log": ["更新日志", "更新日誌", "アップデートログ", "Registro de actualización"],
   "Check for updates": ["检查更新", "檢查更新", "アップデートを確認", "Buscar actualizaciones"],
   "Checking for updates…": ["正在检查更新…", "正在檢查更新…", "アップデートを確認しています…", "Buscando actualizaciones…"],
   "You're on the latest version": ["已是最新版本", "已是最新版本", "最新バージョンです", "Ya tienes la última versión"],
@@ -700,17 +699,23 @@ export const MESSAGES: Record<string, MessageRow> = {
   "The update file is unexpectedly large, so the download was cancelled.": ["更新包大小异常，下载已取消。", "更新套件大小異常，下載已取消。", "アップデートのサイズが異常なため中止しました。", "El archivo de actualización es demasiado grande y se canceló la descarga."],
   "The downloaded update does not match its published checksum, so it was rejected.": ["下载的更新与公布的校验和不一致，已拒绝安装。", "下載的更新與公布的校驗和不一致，已拒絕安裝。", "ダウンロードした更新のチェックサムが一致しないため拒否しました。", "La actualización descargada no coincide con su suma de comprobación y se rechazó."],
   "This build cannot install updates automatically.": ["当前构建无法自动安装更新。", "目前建置無法自動安裝更新。", "このビルドは自動インストールに対応していません。", "Esta compilación no puede instalar actualizaciones automáticamente."],
-  "The update could not be written to disk. Check the update log.": [
-    "无法把更新写入磁盘，请查看更新日志。",
-    "無法將更新寫入磁碟，請查看更新日誌。",
-    "アップデートをディスクに書き込めませんでした。更新ログを確認してください。",
-    "No se pudo escribir la actualización en el disco. Revisa el registro.",
+  "The update could not be written to disk.": [
+    "无法把更新写入磁盘。",
+    "無法將更新寫入磁碟。",
+    "アップデートをディスクに書き込めませんでした。",
+    "No se pudo escribir la actualización en el disco.",
   ],
-  "The installer could not run. Check the update log.": [
-    "安装程序无法运行，请查看更新日志。",
-    "安裝程式無法執行，請查看更新日誌。",
-    "インストーラーを起動できませんでした。更新ログを確認してください。",
-    "No se pudo ejecutar el instalador. Revisa el registro.",
+  "The installer could not run.": [
+    "安装程序无法运行。",
+    "安裝程式無法執行。",
+    "インストーラーを起動できませんでした。",
+    "No se pudo ejecutar el instalador.",
+  ],
+  "The downloaded update is older than the version you are running, so it was refused.": [
+    "下载的更新比当前版本旧，已拒绝安装。",
+    "下載的更新比目前版本舊，已拒絕安裝。",
+    "ダウンロードした更新は現在のバージョンより古いため拒否しました。",
+    "La actualización descargada es más antigua que tu versión y se rechazó.",
   ],
   "The update state is unavailable. Restart the app and try again.": ["更新状态不可用，请重启应用后重试。", "更新狀態不可用，請重新啟動應用程式後重試。", "更新状態を取得できません。アプリを再起動して再試行してください。", "El estado de la actualización no está disponible. Reinicia la app."],
 };

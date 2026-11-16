@@ -189,11 +189,18 @@ size + SHA-256, which `update_download` verifies before the bundle can be instal
 repository must be public — an unauthenticated request cannot read a private repo's releases.
 `latest.json` is never committed: it describes one specific build.
 
+**Version comparison** is `compare_versions` / `is_newer` in `update.rs` (semver precedence:
+numbers compare as numbers, a release beats its prerelease, `+build` is ignored). Two guards keep
+it from ever going backwards: GitHub's `latest` pointer follows *publishing* order, so a hotfix
+released for an old line makes `latest.json` point at a lower version — a **manual** check
+(`update_check(deep)`) then also reads `releases?per_page=30` and takes the highest published
+stable version, while the startup check stays quota-free; and `update_install` refuses a bundle
+whose version is older than the running build (`update_downgrade`).
+
 **Installing an update** (`update_install`) never guesses. It writes `update-pending.json` (the
 version it asked for) and starts a detached helper — `/bin/sh` on macOS, PowerShell on Windows —
-which waits for this process to exit, verifies the unpacked bundle's version, swaps it in, logs
-every step to `update.log` (`app_log_dir`), and reopens the app, including reopening the *old*
-build when any step fails. `update_startup_report` reads that marker on the next launch, so an
+which waits for this process to exit, verifies the unpacked bundle's version, swaps it in, and
+reopens the app, including reopening the *old* build when any step fails. `update_startup_report` reads that marker on the next launch, so an
 installer that ran and changed nothing says so instead of looking like nothing happened.
 macOS installs into the running bundle when its folder is writable, otherwise into `/Applications`
 then `~/Applications` — an app opened from the downloaded dmg (a read-only volume, or a Gatekeeper
@@ -201,8 +208,7 @@ then `~/Applications` — an app opened from the downloaded dmg (a read-only vol
 moves to the Trash. Windows runs the NSIS installer through a generated `.bat` (`/S /D=<dir>`, last
 and unquoted), waits for it, and only then relaunches. A build under `src-tauri/target/` is never
 replaced by a release bundle. The UI has exactly these states and one button each:
-`检查更新 → 下载更新 → 42% → 重启更新 → 正在安装…`, plus `重试` on failure and an
-「更新日志」link.
+`检查更新 → 下载更新 → 42% → 重启更新 → 正在安装…`, plus `重试` on failure.
 
 ## Performance Notes
 

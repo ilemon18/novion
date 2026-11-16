@@ -29,8 +29,6 @@ export function AboutSection() {
   const percent = useUpdate((s) => s.percent);
   const error = useUpdate((s) => s.error);
   const installedTo = useUpdate((s) => s.installedTo);
-  const logPath = useUpdate((s) => s.logPath);
-  const revealLog = useUpdate((s) => s.revealLog);
 
   useEffect(() => {
     let alive = true;
@@ -122,16 +120,6 @@ export function AboutSection() {
         <div className="mt-3 max-w-[320px] text-center text-[11.5px] leading-relaxed text-muted-foreground">
           {detail}
         </div>
-      ) : null}
-
-      {logPath ? (
-        <button
-          type="button"
-          onClick={() => void revealLog()}
-          className="mt-1.5 rounded-md px-1.5 text-[11px] text-muted-foreground underline-offset-2 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/40"
-        >
-          {t("Update log")}
-        </button>
       ) : null}
     </div>
   );

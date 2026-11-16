@@ -41,12 +41,9 @@ interface UpdateStore {
   error: string | null;
   /** where a finished install put the app, when it is not where it ran from */
   installedTo: string;
-  /** `update.log`, so a failed install can be inspected instead of guessed at */
-  logPath: string;
   check: (manual?: boolean) => Promise<void>;
   download: () => Promise<void>;
   install: () => Promise<void>;
-  revealLog: () => Promise<void>;
   dismiss: () => void;
 }
 
@@ -78,7 +75,6 @@ export const useUpdate = create<UpdateStore>((set, get) => ({
   percent: 0,
   error: null,
   installedTo: "",
-  logPath: "",
 
   check: async (manual = false) => {
     const state = get();
@@ -96,7 +92,8 @@ export const useUpdate = create<UpdateStore>((set, get) => ({
     set({ status: "checking", manual, error: null });
     const notify = useUi.getState().notify;
     try {
-      const info = await api.updateCheck();
+      // a check the user asked for is allowed one extra request: see `updateCheck`
+      const info = await api.updateCheck(manual);
       set({ info });
       if (info.available) {
         set({ status: "available" });
@@ -149,7 +146,7 @@ export const useUpdate = create<UpdateStore>((set, get) => ({
     await saveQueue.flushAll();
     try {
       const outcome = await api.updateInstall(info?.latest ?? "");
-      set({ installedTo: outcome.installedTo, logPath: outcome.logPath });
+      set({ installedTo: outcome.installedTo });
       if (outcome.mode === "manual") {
         set({ status: "available" });
         useUi.getState().notify(
@@ -182,15 +179,6 @@ export const useUpdate = create<UpdateStore>((set, get) => ({
     }
   },
 
-  revealLog: async () => {
-    try {
-      const path = await api.updateRevealLog();
-      set({ logPath: path });
-    } catch (err) {
-      useUi.getState().notify(errorMessage(err), { tone: "error", timeout: 6000 });
-    }
-  },
-
   dismiss: () => {
     unwatchProgress();
     clearInstallTimer();
@@ -220,7 +208,6 @@ async function reportStartup(): Promise<UpdateReport | null> {
   }
   if (!report) return null;
   const notify = useUi.getState().notify;
-  useUpdate.setState({ logPath: report.logPath });
   if (report.ok) {
     notify(t("Updated to {version}", { version: report.current }), { timeout: 6000 });
     return report;
@@ -240,12 +227,7 @@ async function reportStartup(): Promise<UpdateReport | null> {
       version: report.attempted,
       current: report.current,
     }),
-    {
-      tone: "error",
-      timeout: 0,
-      actionLabel: t("Update log"),
-      action: () => void useUpdate.getState().revealLog(),
-    },
+    { tone: "error", timeout: 0 },
   );
   return report;
 }
