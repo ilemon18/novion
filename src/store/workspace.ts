@@ -8,6 +8,12 @@ import {
 } from "@/lib/tauri";
 import { canHostChildren } from "@/lib/tree-targets";
 import { readCollapsedFolders, saveCollapsedFolders } from "@/lib/folder-state";
+import {
+  EMPTY_SESSION,
+  readSession,
+  writeSession,
+  type SessionMemory,
+} from "@/lib/session-state";
 import { useUi } from "@/store/ui";
 
 export type { NodeKind, TreeNode };
@@ -28,6 +34,12 @@ export interface WorkspaceState {
   focusRequest: { id: string; nonce: number } | null;
   /** Asks the sidebar to open its inline rename field for `id` (palette ⇄ tree). */
   renameRequest: { id: string; nonce: number } | null;
+  /**
+   * Where the user left off in this workspace: the open document, the sidebar
+   * scroll offset and the unfolded system sections. Mirrored into localStorage
+   * so the next launch can open the same page.
+   */
+  memory: SessionMemory;
   /**
    * Tree snapshots for ⌘Z. Dragging, renaming, archiving and moving to the
    * trash all rewrite `workspace.json`, so undo is the same write with an
@@ -51,6 +63,9 @@ export interface WorkspaceState {
   /** Opens the sidebar's inline rename field for `id`, expanding its parents. */
   requestRename: (id: string) => void;
   toggleExpand: (id: string) => void;
+  /** Records the sidebar tree offset and the doc/section parts of the scene. */
+  rememberTreeScroll: (top: number) => void;
+  rememberSection: (key: keyof SessionMemory["sections"], open: boolean) => void;
   createDoc: (parentId: string | null) => Promise<string | null>;
   createFolder: (parentId: string | null) => Promise<void>;
   rename: (id: string, name: string) => Promise<void>;
@@ -167,6 +182,49 @@ function expandedFor(
 }
 
 /**
+ * Opens every folder above `id`, so a row that is about to become the selection
+ * is actually on screen instead of hidden inside a folder that was left closed.
+ */
+function openedAbove(
+  expanded: Record<string, boolean>,
+  nodes: Record<string, TreeNode>,
+  id: string | null,
+): Record<string, boolean> {
+  if (!id || !nodes[id]) return expanded;
+  const next = { ...expanded };
+  let cur: TreeNode | undefined = nodes[id];
+  let guard = 0;
+  while (cur?.parentId && guard++ < 64) {
+    next[cur.parentId] = true;
+    cur = nodes[cur.parentId];
+  }
+  return next;
+}
+
+/** A document the editor may show: not archived, not in the Trash. */
+function isOpenable(nodes: Record<string, TreeNode>, node: TreeNode): boolean {
+  return node.kind === "doc" && !node.completedAt && !isTrashed(nodes, node.id);
+}
+
+/**
+ * What the editor should show after a tree was loaded (or re-pointed at another
+ * root): the document that was open last time, as long as it still exists and
+ * still lives in the live tree. Otherwise the first document, so an unreadable
+ * memory — or a note that was deleted in the meantime — never lands the user on
+ * an empty page with content right next to it.
+ */
+function selectionFor(
+  ws: Workspace,
+  nodes: Record<string, TreeNode>,
+  remembered: string | null,
+): string | null {
+  const prev = remembered ? nodes[remembered] : undefined;
+  if (prev && isOpenable(nodes, prev)) return prev.id;
+  const first = ws.nodes.find((n) => isOpenable(nodes, n));
+  return first?.id ?? null;
+}
+
+/**
  * Guards the create actions against a doubled click: the row is only appended
  * once the backend answered, so two rapid invocations both looked "unhandled"
  * and produced two documents.
@@ -189,6 +247,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   expanded: {},
   focusRequest: null,
   renameRequest: null,
+  memory: EMPTY_SESSION,
   undoStack: [],
   redoStack: [],
   busy: false,
@@ -201,14 +260,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       // translation of whatever interface language this profile uses
       const [root, ws] = await Promise.all([api.root(), api.ensure()]);
       const { nodes, children } = indexWorkspace(ws, {});
-      const expanded = expandedFor(root, nodes, ws);
-      const firstDoc = ws.nodes.find(
-        (n) =>
-          n.kind === "doc" &&
-          !n.completedAt &&
-          !n.trashedAt &&
-          !(n.parentId && isTrashed(nodes, n.parentId)),
-      );
+      // the scene from the last run: which document was open and where the
+      // sidebar was scrolled to (the folded folders have their own memory)
+      const memory = readSession(localStorage, root);
+      const selectedId = selectionFor(ws, nodes, memory.docId);
+      const expanded = openedAbove(expandedFor(root, nodes, ws), nodes, selectedId);
       set({
         ready: true,
         busy: false,
@@ -216,7 +272,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         nodes,
         children,
         expanded,
-        selectedId: firstDoc?.id ?? null,
+        selectedId,
+        memory,
         undoStack: [],
         redoStack: [],
         error: null,
@@ -238,21 +295,18 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   adopt: (ws, root) => {
     const { nodes, children } = indexWorkspace(ws, {});
-    const expanded = expandedFor(root, nodes, ws);
-    const firstDoc = ws.nodes.find(
-      (n) =>
-        n.kind === "doc" &&
-        !n.completedAt &&
-        !n.trashedAt &&
-        !(n.parentId && isTrashed(nodes, n.parentId)),
-    );
+    // a storage switch brings its own scene: the memory is per root
+    const memory = readSession(localStorage, root);
+    const selectedId = selectionFor(ws, nodes, memory.docId);
+    const expanded = openedAbove(expandedFor(root, nodes, ws), nodes, selectedId);
     set({
       ready: true,
       rootPath: root,
       nodes,
       children,
       expanded,
-      selectedId: firstDoc?.id ?? null,
+      selectedId,
+      memory,
       undoStack: [],
       redoStack: [],
       error: null,
@@ -265,14 +319,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   reveal: (id) => {
     const { nodes, expanded } = get();
-    const next = { ...expanded };
-    let cur = nodes[id];
-    let guard = 0;
-    while (cur?.parentId && guard++ < 64) {
-      next[cur.parentId] = true;
-      cur = nodes[cur.parentId];
-    }
-    set({ expanded: next, selectedId: id });
+    set({ expanded: openedAbove(expanded, nodes, id), selectedId: id });
   },
 
   focusFolder: (id) => {
@@ -314,6 +361,23 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   toggleExpand: (id) =>
     set((s) => ({ expanded: { ...s.expanded, [id]: !s.expanded[id] } })),
+
+  /**
+   * The sidebar reports its scroll offset on every scroll event; the value is
+   * only kept in memory and written out by the subscriber below.
+   */
+  rememberTreeScroll: (top) => {
+    const { memory } = get();
+    const next = Math.max(0, Math.round(top));
+    if (next === memory.treeScrollTop) return;
+    set({ memory: { ...memory, treeScrollTop: next } });
+  },
+
+  rememberSection: (key, open) => {
+    const { memory } = get();
+    if (memory.sections[key] === open) return;
+    set({ memory: { ...memory, sections: { ...memory.sections, [key]: open } } });
+  },
 
   createDoc: async (parentId) => {
     if (createInFlight) return null;
@@ -521,6 +585,50 @@ useWorkspace.subscribe((state, prev) => {
   if (!state.ready || !state.rootPath) return;
   saveCollapsedFolders(localStorage, state.rootPath, state.nodes, state.expanded);
 });
+
+/**
+ * The rest of the scene — open document, sidebar offset, unfolded sections.
+ *
+ * Scrolling fires dozens of times a second, so the write is debounced; a click
+ * on a document goes through the same timer (a switch is followed by a load,
+ * not by quitting), and `pagehide` flushes whatever is still pending so the last
+ * action of a session is never the one that gets lost.
+ */
+const SESSION_WRITE_MS = 250;
+let sessionTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Writes the pending scene. */
+function flushSession() {
+  if (sessionTimer === null) return;
+  clearTimeout(sessionTimer);
+  sessionTimer = null;
+  const { ready, rootPath, memory } = useWorkspace.getState();
+  if (!ready || !rootPath) return;
+  writeSession(localStorage, rootPath, memory);
+}
+
+/**
+ * The remembered document follows the *document*, not the last row clicked:
+ * having browsed a folder must not replace the note the reader comes back to.
+ */
+useWorkspace.subscribe((state, prev) => {
+  if (state.selectedId === prev.selectedId || !state.ready) return;
+  const node = state.selectedId ? state.nodes[state.selectedId] : undefined;
+  if (node?.kind !== "doc" || state.memory.docId === node.id) return;
+  useWorkspace.setState({ memory: { ...state.memory, docId: node.id } });
+});
+
+useWorkspace.subscribe((state, prev) => {
+  if (!state.ready || !state.rootPath) return;
+  if (state.memory === prev.memory && state.selectedId === prev.selectedId) return;
+  if (sessionTimer !== null) clearTimeout(sessionTimer);
+  sessionTimer = setTimeout(flushSession, SESSION_WRITE_MS);
+});
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushSession);
+  window.addEventListener("beforeunload", flushSession);
+}
 
 export const selectChildren = (parentId: string | null) => (s: WorkspaceState) =>
   s.children[parentId ?? ROOT] ?? [];

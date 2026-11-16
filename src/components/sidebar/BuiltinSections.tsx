@@ -61,8 +61,14 @@ export function BuiltinSections() {
   const setCompleted = useWorkspace((s) => s.setCompleted);
   const askConfirm = useUi((s) => s.askConfirm);
 
-  const [open, setOpen] = useState<Record<string, boolean>>({ completed: false, trash: false });
-  const toggle = (key: string) => setOpen((s) => ({ ...s, [key]: !s[key] }));
+  // Which sections are unfolded is part of the remembered scene (the app opens
+  // the same way it was left), so it lives in the workspace memory instead of
+  // component state — that also keeps it in sync when the storage root changes.
+  const archivedOpen = useWorkspace((s) => s.memory.sections.completed);
+  const trashOpen = useWorkspace((s) => s.memory.sections.trash);
+  const rememberSection = useWorkspace((s) => s.rememberSection);
+  const open = { completed: archivedOpen, trash: trashOpen };
+  const toggle = (key: "completed" | "trash") => rememberSection(key, !open[key]);
 
   /** right-click target, drawn by the shared `NodeContextMenu` */
   const [menu, setMenu] = useState<{ node: TreeNode; x: number; y: number; trash: boolean } | null>(

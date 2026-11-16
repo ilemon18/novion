@@ -12,6 +12,13 @@ const VIRTUALIZE_OVER = 200;
 /** how long a collapsed folder has to be hovered during a drag to open it */
 const EXPAND_HOVER_MS = 600;
 
+/**
+ * Root whose restored document has already been brought into view. Module scope
+ * on purpose: toggling the sidebar remounts this list, and that must not scroll
+ * away from a position the user chose during the session.
+ */
+let revealedRoot: string | null = null;
+
 function isDescendant(nodes: Record<string, TreeNode>, ancestorId: string, id: string) {
   let cur: TreeNode | undefined = nodes[id];
   let guard = 0;
@@ -62,6 +69,61 @@ export function TreeList() {
   useAutoHideScrollbar(containerRef);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewport, setViewport] = useState(600);
+  const rememberTreeScroll = useWorkspace((s) => s.rememberTreeScroll);
+
+  /**
+   * Put the tree back where the user left it: boot, and every later mount of the
+   * sidebar, start at the remembered offset instead of at the top. The offset is
+   * read once per mount (`mounted`) — tracking it afterwards would fight the
+   * user's own scrolling. `rootPath` is a dependency because the list is drawn
+   * before the workspace has been read, so the tree arrives one commit later.
+   */
+  const rootPath = useWorkspace((s) => s.rootPath);
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!rootPath || mounted.current) return;
+    mounted.current = true;
+    const top = useWorkspace.getState().memory.treeScrollTop;
+    // nothing remembered (or the tree fits on one screen): leave it to the
+    // "reveal the active document" pass below
+    if (top <= 0) return;
+    // the remembered row is the right context for this offset, so that pass must
+    // not centre the document somewhere else
+    revealedRoot = rootPath;
+    const el = containerRef.current;
+    if (el) el.scrollTop = top;
+    // A virtual list only renders the window around `scrollTop`, so the first
+    // assignment may not have the height it needs; the state change below puts
+    // the rows (and the spacer) in place, and the next frame scrolls for real.
+    setScrollTop(top);
+    if (!el) return;
+    const frame = requestAnimationFrame(() => {
+      el.scrollTop = top;
+      setScrollTop(el.scrollTop);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [rootPath]);
+
+  /**
+   * The restored document has to be *seen*, not just selected: a profile that
+   * predates the scroll memory, or a tree that grew since then, could leave the
+   * active row below the fold. Bring it into view once per root, without
+   * animation and without centring anything the user did not centre.
+   */
+  useEffect(() => {
+    if (!rootPath || revealedRoot === rootPath || rows.length === 0) return;
+    revealedRoot = rootPath;
+    const el = containerRef.current;
+    if (!el || !selectedId) return;
+    const index = rows.findIndex((row) => row.id === selectedId);
+    if (index < 0) return; // hidden inside a folded folder: nothing to aim at
+    const top = index * ROW_H;
+    const bottom = top + ROW_H;
+    if (top >= el.scrollTop && bottom <= el.scrollTop + el.clientHeight) return;
+    const next = Math.max(0, top - Math.max(0, (el.clientHeight - ROW_H) / 2));
+    el.scrollTop = next;
+    setScrollTop(next);
+  }, [rows, rootPath, selectedId]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -384,9 +446,11 @@ export function TreeList() {
       onDoubleClick={onContainerDoubleClick}
       onContextMenu={onContextMenu}
       onScroll={(e) => {
-        if (!virtual) return;
         const next = e.currentTarget.scrollTop;
-        setScrollTop(next);
+        // the offset is part of the remembered scene in both modes; the state
+        // copy only drives the virtual window
+        rememberTreeScroll(next);
+        if (virtual) setScrollTop(next);
       }}
       onDragOver={(e) => {
         if (!dragId.current) return;
