@@ -418,12 +418,43 @@ async fn rename_page(client: &NotionClient, page_id: &str, title: &str) -> AppRe
 /// `false` means the page no longer exists (deleted, trashed or un-shared).
 async fn remote_page_exists(client: &NotionClient, page_id: &str) -> AppResult<bool> {
     match client.get(&format!("/pages/{page_id}")).await {
-        Ok(page) => {
-            let removed = page.get("archived").and_then(Value::as_bool) == Some(true)
-                || page.get("in_trash").and_then(Value::as_bool) == Some(true);
-            Ok(!removed)
-        }
+        Ok(page) => Ok(!notion::page_is_archived(&page)),
         Err(err) if err.code == "notion_not_found" => Ok(false),
+        Err(err) => Err(err),
+    }
+}
+
+/// A run may update existing children, but every new node is created under the
+/// selected target page. Check that page once up front: an archived target is
+/// otherwise reported as one misleading "archived block" failure per new node.
+async fn ensure_sync_target(client: &NotionClient, cfg: &notion::NotionConfig) -> AppResult<()> {
+    let fallback = if cfg.parent_page_title.trim().is_empty() {
+        cfg.parent_page_id.as_str()
+    } else {
+        cfg.parent_page_title.as_str()
+    };
+    match client.get(&format!("/pages/{}", cfg.parent_page_id)).await {
+        Ok(page) if notion::page_is_archived(&page) => {
+            let fetched = notion::page_title(&page);
+            let title = if fetched.trim().is_empty() {
+                fallback
+            } else {
+                fetched.as_str()
+            };
+            Err(AppError::new(
+                "notion_target_archived",
+                format!(
+                    "Notion 同步目标页「{title}」在回收站里。请先在 Notion 里恢复它，或在设置里重新选择同步页面。"
+                ),
+            ))
+        }
+        Ok(_) => Ok(()),
+        Err(err) if err.code == "notion_not_found" => Err(AppError::new(
+            "notion_target_missing",
+            format!(
+                "Notion 同步目标页「{fallback}」找不到。请确认页面仍存在且已分享给集成，或在设置里重新选择同步页面。"
+            ),
+        )),
         Err(err) => Err(err),
     }
 }
@@ -869,6 +900,7 @@ pub async fn notion_sync_docs<R: Runtime>(
     let paths = Paths::new(workspace_root(&app)?);
     paths.ensure_dirs().await?;
     let mut ctx = build_ctx(&app, &client, &paths, options).await?;
+    ensure_sync_target(&client, &ctx.cfg).await?;
     emit(&app, "folders", 0, ctx.total, "");
     sync_tree(&mut ctx).await;
     finish(ctx).await

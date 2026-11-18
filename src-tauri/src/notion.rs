@@ -555,6 +555,12 @@ pub fn page_title(page: &Value) -> String {
     String::new()
 }
 
+/// True when a page is archived or sitting in the workspace trash.
+pub fn page_is_archived(page: &Value) -> bool {
+    page.get("archived").and_then(Value::as_bool) == Some(true)
+        || page.get("in_trash").and_then(Value::as_bool) == Some(true)
+}
+
 pub fn page_url(page_id: &str) -> String {
     let compact: String = page_id.chars().filter(|c| *c != '-').collect();
     format!("https://www.notion.so/{compact}")
@@ -722,9 +728,7 @@ pub async fn notion_set_parent<R: Runtime>(
             "这是一个数据库，不是页面：请选择普通页面作为同步目标",
         ));
     }
-    if page.get("archived").and_then(Value::as_bool) == Some(true)
-        || page.get("in_trash").and_then(Value::as_bool) == Some(true)
-    {
+    if page_is_archived(&page) {
         return Err(AppError::new(
             "notion_bad_target",
             "这个页面在回收站里：请先在 Notion 里恢复它，或换一个目标页面",
@@ -829,5 +833,12 @@ mod tests {
             }
         });
         assert_eq!(page_title(&page), "我的页面");
+    }
+
+    #[test]
+    fn detects_archived_and_trashed_pages() {
+        assert!(page_is_archived(&json!({ "archived": true })));
+        assert!(page_is_archived(&json!({ "in_trash": true })));
+        assert!(!page_is_archived(&json!({ "archived": false, "in_trash": false })));
     }
 }

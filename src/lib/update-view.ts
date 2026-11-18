@@ -160,7 +160,9 @@ export function updateDetail(view: UpdateView, t: Translate): string | null {
     case "checking":
       return t("Checking for updates…");
     case "downloading":
-      return t("Downloading {percent}%", { percent: view.percent });
+      // The button above already says the percentage; repeating it here puts
+      // two download readouts on the same panel.
+      return null;
     case "installing":
       return t("Installing the update, the app will restart");
     case "ready":
