@@ -1043,8 +1043,8 @@
       "type": "bookmark",
       "attrs": {
         "url": "https://www.notion.so",
-        "title": "Notion 雙向同步",
-        "description": "本機改動寫回 Notion，Notion 上的改動也能拉回來。"
+        "title": "Notion 單向同步",
+        "description": "把本機文件與資料夾增量推送到 Notion。"
       }
     },
     {
@@ -1052,7 +1052,7 @@
       "content": [
         {
           "type": "text",
-          "text": "設定 → Notion 可以把工作區鏡像到 Notion 頁面：資料夾變成子頁面，文件變成頁面。兩邊的改動都能同步過去，衝突不會自動覆蓋，會逐條詢問。"
+          "text": "設定 → Notion 可以把工作區推送到 Notion 頁面：資料夾變成多層子頁面，文件變成頁面。只在 Notion 中做的修改會被忽略；本機有變更時會把對應內容推送過去。"
         }
       ]
     },

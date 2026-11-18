@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, Runtime};
 
@@ -18,6 +18,9 @@ use crate::atomic::write_json_atomic;
 use crate::error::{AppError, AppResult};
 
 pub const NOTION_VERSION: &str = "2022-06-28";
+/// The page-move endpoint was introduced after the integration API version
+/// used by every other request. Keep the override local to `move_page`.
+pub const NOTION_MOVE_VERSION: &str = "2026-03-11";
 const API_BASE: &str = "https://api.notion.com/v1";
 const USER_AGENT: &str = concat!("Novion/", env!("CARGO_PKG_VERSION"));
 /// Notion allows ~3 requests per second on average; stay a little below it.
@@ -31,22 +34,58 @@ const MAX_ATTEMPTS: u32 = 4;
 #[serde(rename_all = "camelCase", default)]
 pub struct PageLink {
     pub page_id: String,
+    /// Notion page that currently contains this page. Empty on links created
+    /// before parent caching existed; the first sync backfills it without
+    /// moving the page.
+    pub parent_page_id: String,
     pub title: String,
     /// document `updatedAt` at the moment the page content was written
     pub doc_updated_at: u64,
     pub synced_at: u64,
     /// false while the page exists but its body was never fully written
     pub ok: bool,
-    /// Hash of the local body at the last successful push *or* pull. Empty on
-    /// links created before two-way sync existed; the next sync fills it in
-    /// without touching either side.
+    /// Hash of the local body at the last successful push. Empty on links
+    /// created before incremental sync existed; the next sync fills it in
+    /// without touching the remote body unless the local document is newer.
     #[serde(default)]
     pub local_hash: String,
-    /// Notion's `last_edited_time` for the page as of the last sync. Comparing
-    /// it with the live value is how a remote edit is noticed without hashing
-    /// the remote body on every run.
-    #[serde(default)]
-    pub remote_edited_at: String,
+}
+
+/// One synced folder. The parent and title are cached so a run can tell a
+/// local rename or move from an unchanged page without reading remote content.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FolderLink {
+    pub page_id: String,
+    pub parent_page_id: String,
+    pub title: String,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum FolderLinkCompat {
+    Legacy(String),
+    Current(FolderLink),
+}
+
+fn deserialize_folders<'de, D>(deserializer: D) -> Result<HashMap<String, FolderLink>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let stored = HashMap::<String, FolderLinkCompat>::deserialize(deserializer)?;
+    Ok(stored
+        .into_iter()
+        .map(|(folder_id, value)| {
+            let link = match value {
+                FolderLinkCompat::Legacy(page_id) => FolderLink {
+                    page_id,
+                    ..FolderLink::default()
+                },
+                FolderLinkCompat::Current(link) => link,
+            };
+            (folder_id, link)
+        })
+        .collect())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,8 +100,9 @@ pub struct NotionConfig {
     pub parent_page_title: String,
     /// Novion doc id → Notion page
     pub pages: HashMap<String, PageLink>,
-    /// Novion folder id → Notion page id
-    pub folders: HashMap<String, String>,
+    /// Novion folder id → synced Notion folder page
+    #[serde(default, deserialize_with = "deserialize_folders")]
+    pub folders: HashMap<String, FolderLink>,
     pub last_sync_at: u64,
 }
 
@@ -202,9 +242,9 @@ impl NotionClient {
         })
     }
 
-    fn base_headers(&self, rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    fn base_headers(&self, rb: reqwest::RequestBuilder, version: &str) -> reqwest::RequestBuilder {
         rb.header("Authorization", format!("Bearer {}", self.token))
-            .header("Notion-Version", NOTION_VERSION)
+            .header("Notion-Version", version)
             .header("Accept", "application/json")
     }
 
@@ -214,11 +254,22 @@ impl NotionClient {
         url: String,
         body: Option<Value>,
     ) -> AppResult<Value> {
+        self.request_with_version(method, url, body, NOTION_VERSION)
+            .await
+    }
+
+    async fn request_with_version(
+        &self,
+        method: reqwest::Method,
+        url: String,
+        body: Option<Value>,
+        version: &str,
+    ) -> AppResult<Value> {
         let mut attempt: u32 = 0;
         loop {
             attempt += 1;
             throttle().await;
-            let mut rb = self.base_headers(self.http.request(method.clone(), &url));
+            let mut rb = self.base_headers(self.http.request(method.clone(), &url), version);
             if let Some(body) = &body {
                 rb = rb.json(body);
             }
@@ -266,18 +317,40 @@ impl NotionClient {
     }
 
     pub async fn post(&self, path: &str, body: Value) -> AppResult<Value> {
-        self.request(reqwest::Method::POST, format!("{API_BASE}{path}"), Some(body))
-            .await
+        self.request(
+            reqwest::Method::POST,
+            format!("{API_BASE}{path}"),
+            Some(body),
+        )
+        .await
     }
 
     pub async fn patch(&self, path: &str, body: Value) -> AppResult<Value> {
-        self.request(reqwest::Method::PATCH, format!("{API_BASE}{path}"), Some(body))
-            .await
+        self.request(
+            reqwest::Method::PATCH,
+            format!("{API_BASE}{path}"),
+            Some(body),
+        )
+        .await
     }
 
     pub async fn delete(&self, path: &str) -> AppResult<Value> {
         self.request(reqwest::Method::DELETE, format!("{API_BASE}{path}"), None)
             .await
+    }
+
+    /// Moves a page under another page. Only this request opts into the newer
+    /// Notion API version that exposes `POST /pages/{id}/move`.
+    pub async fn move_page(&self, page_id: &str, parent_page_id: &str) -> AppResult<Value> {
+        self.request_with_version(
+            reqwest::Method::POST,
+            format!("{API_BASE}/pages/{page_id}/move"),
+            Some(json!({
+                "parent": { "type": "page_id", "page_id": parent_page_id }
+            })),
+            NOTION_MOVE_VERSION,
+        )
+        .await
     }
 
     /// Uploads raw bytes to a signed Notion upload URL (multipart, field `file`).
@@ -298,7 +371,7 @@ impl NotionClient {
                 .map_err(|e| AppError::new("notion_upload", format!("图片类型不支持：{e}")))?;
             let form = reqwest::multipart::Form::new().part("file", part);
             let rb = self
-                .base_headers(self.http.post(upload_url))
+                .base_headers(self.http.post(upload_url), NOTION_VERSION)
                 .multipart(form);
             let response = match rb.send().await {
                 Ok(response) => response,
@@ -719,6 +792,32 @@ mod tests {
         );
         assert_eq!(extract_page_id("https://www.notion.so/settings"), None);
         assert_eq!(extract_page_id(""), None);
+    }
+
+    #[test]
+    fn deserializes_legacy_folder_ids_without_losing_the_config() {
+        let cfg: NotionConfig = serde_json::from_value(json!({
+            "version": 1,
+            "token": "ntn_legacy_token_value",
+            "workspaceName": "Workspace",
+            "botName": "Novion",
+            "parentPageId": "root-page",
+            "parentPageTitle": "Root",
+            "pages": {},
+            "folders": { "folder-1": "folder-page-1" },
+            "lastSyncAt": 42
+        }))
+        .expect("old notion.json should still load");
+
+        let folder = cfg
+            .folders
+            .get("folder-1")
+            .expect("legacy mapping survives");
+        assert_eq!(folder.page_id, "folder-page-1");
+        assert!(folder.parent_page_id.is_empty());
+        assert!(folder.title.is_empty());
+        assert_eq!(cfg.parent_page_id, "root-page");
+        assert_eq!(cfg.last_sync_at, 42);
     }
 
     #[test]

@@ -11,9 +11,16 @@ export type SettingsSection =
   | "about";
 
 /** Colour scheme layered on top of the light/dark mode. */
-export type PaletteId = "paper" | "catppuccin" | "github" | "rose-pine" | "gruvbox";
+export type PaletteId =
+  | "white"
+  | "paper"
+  | "catppuccin"
+  | "github"
+  | "rose-pine"
+  | "gruvbox";
 
 export const PALETTE_IDS: PaletteId[] = [
+  "white",
   "paper",
   "catppuccin",
   "github",
@@ -47,6 +54,8 @@ export const DOC_FONT_STACKS: Record<DocFontId, string> = {
 const THEME_KEY = "novion:theme";
 const LOCALE_KEY = "novion:locale";
 const PALETTE_KEY = "novion:palette";
+const PALETTE_VERSION_KEY = "novion:palette-version";
+const PALETTE_VERSION = "1";
 const FEATURES_KEY = "novion:features";
 const WIDTH_KEY = "novion:sidebar-width";
 const SIDEBAR_OPEN_KEY = "novion:sidebar-open";
@@ -77,9 +86,26 @@ function readLocale(): Locale {
   return isLocale(v) ? v : "en";
 }
 
+/**
+ * White replaced Paper as the default palette in v1 of the palette schema.
+ * The version marker makes that migration one-shot: after it runs, choosing
+ * Paper (or any community palette) is persisted normally and is never
+ * overwritten again.
+ */
+export function readPalettePreference(
+  storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
+): PaletteId {
+  if (storage.getItem(PALETTE_VERSION_KEY) === null) {
+    storage.setItem(PALETTE_KEY, "white");
+    storage.setItem(PALETTE_VERSION_KEY, PALETTE_VERSION);
+    return "white";
+  }
+  const value = storage.getItem(PALETTE_KEY);
+  return PALETTE_IDS.includes(value as PaletteId) ? (value as PaletteId) : "white";
+}
+
 function readPalette(): PaletteId {
-  const v = localStorage.getItem(PALETTE_KEY);
-  return PALETTE_IDS.includes(v as PaletteId) ? (v as PaletteId) : "paper";
+  return readPalettePreference();
 }
 
 function readDocFont(): DocFontId {
@@ -300,6 +326,7 @@ export const useUi = create<UiState>((set, get) => ({
 
   setPalette: (palette) => {
     localStorage.setItem(PALETTE_KEY, palette);
+    localStorage.setItem(PALETTE_VERSION_KEY, PALETTE_VERSION);
     set({ palette });
   },
 
@@ -434,7 +461,7 @@ export function applyDocFont(font: DocFontId) {
   style.setProperty("--font-ui", stack);
 }
 
-export function applyTheme(mode: ThemeMode, palette: PaletteId = "paper") {
+export function applyTheme(mode: ThemeMode, palette: PaletteId = "white") {
   const resolved = resolveTheme(mode);
   const root = document.documentElement;
   // `data-palette` is always written, including "paper": a stale attribute from

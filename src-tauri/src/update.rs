@@ -189,7 +189,7 @@ struct Release {
     assets: Vec<Asset>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct Asset {
     #[serde(default)]
     name: String,

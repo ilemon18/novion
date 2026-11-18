@@ -1043,8 +1043,8 @@
       "type": "bookmark",
       "attrs": {
         "url": "https://www.notion.so",
-        "title": "Sincronización bidireccional con Notion",
-        "description": "Envía los cambios locales a Notion y trae los de Notion de vuelta."
+        "title": "Sincronización unidireccional con Notion",
+        "description": "Envía tus notas y carpetas locales a Notion de forma incremental."
       }
     },
     {
@@ -1052,7 +1052,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Ajustes → Notion refleja el espacio de trabajo en una página de Notion: las carpetas se vuelven subpáginas y las notas, páginas. Los cambios viajan en ambos sentidos y los conflictos nunca se sobrescriben: se preguntan uno a uno."
+          "text": "Ajustes → Notion envía este espacio de trabajo a una página de Notion: las carpetas se convierten en subpáginas anidadas y las notas, en páginas. Los cambios hechos solo en Notion se ignoran; el siguiente cambio local se envía a la página correspondiente."
         }
       ]
     },

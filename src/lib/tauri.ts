@@ -112,11 +112,6 @@ export interface AssetRef {
   abs: string;
 }
 
-export type NotionSyncMode = "new_only" | "overwrite";
-export type NotionSyncDirection = "push" | "pull" | "both";
-export type NotionConflictPolicy = "ask" | "local" | "remote";
-export type NotionConflictAction = "local" | "remote" | "both";
-
 export interface NotionState {
   connected: boolean;
   /** last 4 characters only */
@@ -148,22 +143,6 @@ export interface NotionParent {
 
 export interface NotionSyncOptions {
   includeCompleted: boolean;
-  mode: NotionSyncMode;
-  direction: NotionSyncDirection;
-  conflictPolicy: NotionConflictPolicy;
-}
-
-/** A note both sides changed since the last sync. */
-export interface NotionSyncConflict {
-  docId: string;
-  title: string;
-  pageId: string;
-  url: string;
-}
-
-export interface NotionConflictResolution {
-  docId: string;
-  action: NotionConflictAction;
 }
 
 export interface NotionSyncFailure {
@@ -177,9 +156,6 @@ export interface NotionSyncStats {
   pagesCreated: number;
   pagesUpdated: number;
   pagesSkipped: number;
-  pagesPulled: number;
-  pagesImported: number;
-  conflicts: NotionSyncConflict[];
   imagesUploaded: number;
   imagesFailed: number;
   failures: NotionSyncFailure[];
@@ -368,8 +344,6 @@ export const api = {
   notionSetParent: (target: string) => invoke<NotionParent>("notion_set_parent", { target }),
   notionSync: (options: NotionSyncOptions) =>
     invoke<NotionSyncStats>("notion_sync_docs", { options }),
-  notionResolveConflicts: (resolutions: NotionConflictResolution[]) =>
-    invoke<NotionSyncStats>("notion_resolve_conflicts", { resolutions }),
   /**
    * Newest GitHub release, compared with this build.
    *
@@ -405,7 +379,7 @@ export async function onStorageProgress(
 }
 
 export interface NotionProgress {
-  phase: "prepare" | "folders" | "docs" | "pull" | "import" | "images" | "done";
+  phase: "folders" | "docs" | "done";
   done: number;
   total: number;
   current: string;

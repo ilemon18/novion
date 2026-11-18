@@ -1043,8 +1043,8 @@
       "type": "bookmark",
       "attrs": {
         "url": "https://www.notion.so",
-        "title": "Notion two-way sync",
-        "description": "Push local edits to Notion, and pull Notion edits back."
+        "title": "Notion one-way sync",
+        "description": "Push your local notes and folders to Notion incrementally."
       }
     },
     {
@@ -1052,7 +1052,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Settings → Notion mirrors the workspace to a Notion page: folders become subpages, notes become pages. Edits travel in both directions, and conflicts are never overwritten — you are asked case by case."
+          "text": "Settings → Notion pushes this workspace to a Notion page: folders become nested subpages and notes become pages. Changes made only in Notion are ignored; the next local change is pushed to the matching page."
         }
       ]
     },

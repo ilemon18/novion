@@ -1043,8 +1043,8 @@
       "type": "bookmark",
       "attrs": {
         "url": "https://www.notion.so",
-        "title": "Notion 双向同步",
-        "description": "本地改动写回 Notion，Notion 上的改动也能拉回来。"
+        "title": "Notion 单向同步",
+        "description": "把本地文档和文件夹增量推送到 Notion。"
       }
     },
     {
@@ -1052,7 +1052,7 @@
       "content": [
         {
           "type": "text",
-          "text": "设置 → Notion 可以把工作区镜像到 Notion 页面：文件夹变成子页面，文档变成页面。两边的改动都能同步过去，冲突不会自动覆盖，会逐条询问。"
+          "text": "设置 → Notion 可以把工作区推送到 Notion 页面：文件夹变成多级子页面，文档变成页面。仅在 Notion 中做的修改会被忽略；本地有变化时会把对应内容推送过去。"
         }
       ]
     },

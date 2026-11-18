@@ -1,13 +1,9 @@
-//! Two-way Notion sync.
+//! One-way, incremental Notion sync.
 //!
-//! Local folders become child pages, local documents become pages whose body is
-//! the document. A run can push, pull, or do both; when both sides changed since
-//! the last successful sync the document is reported as a conflict instead of
-//! being overwritten.
-//!
-//! The run is strictly sequential (Notion allows ~3 requests/second), reports
-//! progress through the `notion:progress` event and never aborts on a single
-//! document: failures are collected and returned so the UI can list them.
+//! The local workspace is authoritative: folders and documents are pushed to
+//! Notion, while edits made only in Notion are deliberately ignored. The run is
+//! sequential (Notion allows roughly three requests per second), reports
+//! progress through `notion:progress`, and keeps going when one node fails.
 
 use std::collections::{HashMap, HashSet};
 
@@ -15,78 +11,24 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Runtime};
 
-use crate::atomic::{read_json, write_json_atomic};
+use crate::atomic::read_json;
 use crate::error::{AppError, AppResult};
 use crate::models::{now_ms, DocFile, Node, NodeKind, Workspace};
-use crate::notion::{self, NotionClient, PageLink};
+use crate::notion::{self, FolderLink, NotionClient, PageLink};
 use crate::notion_blocks::{self, BlockNode, ASSET_MARKER};
-use crate::paths::{short_id, workspace_root, Paths};
-use crate::workspace::{self, COMPLETED_ID};
+use crate::paths::{workspace_root, Paths};
+use crate::workspace::{self, COMPLETED_ID, TRASH_ID};
 
 /// Notion accepts at most 100 children per request.
 const MAX_BLOCKS: usize = 100;
 /// Single-part upload limit; anything bigger degrades to a text placeholder.
 const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
-/// Recursion guard for block trees and page nesting.
-const MAX_DEPTH: usize = 12;
-/// Upper bound for one run, so a mis-mapped target page cannot import forever.
-const MAX_IMPORTS: usize = 500;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum SyncMode {
-    /// Create only what is missing; documents already synced are skipped.
-    #[default]
-    NewOnly,
-    /// Also rewrite the body of documents changed since the last sync.
-    Overwrite,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum SyncDirection {
-    /// Local changes go to Notion; remote edits are left alone.
-    #[default]
-    Push,
-    /// Notion changes come back; local edits are left alone.
-    Pull,
-    /// Both directions, with conflicts decided by `conflict_policy`.
-    Both,
-}
-
-impl SyncDirection {
-    fn pushes(self) -> bool {
-        matches!(self, SyncDirection::Push | SyncDirection::Both)
-    }
-
-    fn pulls(self) -> bool {
-        matches!(self, SyncDirection::Pull | SyncDirection::Both)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum ConflictPolicy {
-    /// Report the document and let the user decide.
-    #[default]
-    Ask,
-    /// Local wins: the Notion body is rewritten.
-    Local,
-    /// Notion wins: the local body is replaced.
-    Remote,
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncOptions {
     #[serde(default)]
     pub include_completed: bool,
-    #[serde(default)]
-    pub mode: SyncMode,
-    #[serde(default)]
-    pub direction: SyncDirection,
-    #[serde(default)]
-    pub conflict_policy: ConflictPolicy,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -97,16 +39,6 @@ pub struct SyncFailure {
     pub message: String,
 }
 
-/// A document both sides changed since the last sync.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncConflict {
-    pub doc_id: String,
-    pub title: String,
-    pub page_id: String,
-    pub url: String,
-}
-
 #[derive(Debug, Default, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncStats {
@@ -114,9 +46,6 @@ pub struct SyncStats {
     pub pages_created: usize,
     pub pages_updated: usize,
     pub pages_skipped: usize,
-    pub pages_pulled: usize,
-    pub pages_imported: usize,
-    pub conflicts: Vec<SyncConflict>,
     pub images_uploaded: usize,
     pub images_failed: usize,
     pub failures: Vec<SyncFailure>,
@@ -133,7 +62,13 @@ struct Progress {
     current: String,
 }
 
-fn emit<R: Runtime>(app: &AppHandle<R>, phase: &'static str, done: usize, total: usize, current: &str) {
+fn emit<R: Runtime>(
+    app: &AppHandle<R>,
+    phase: &'static str,
+    done: usize,
+    total: usize,
+    current: &str,
+) {
     let _ = app.emit(
         "notion:progress",
         Progress {
@@ -151,7 +86,7 @@ fn emit<R: Runtime>(app: &AppHandle<R>, phase: &'static str, done: usize, total:
 ///
 /// Not cryptographic: it only answers "did this body change since the last
 /// sync?", and two independently seeded FNV variants make an accidental
-/// collision far less likely than the timestamp comparison it replaces.
+/// collision far less likely than a timestamp comparison alone.
 pub fn content_hash(content: &Value) -> String {
     let text = serde_json::to_string(content).unwrap_or_default();
     let mut a: u64 = 0xcbf2_9ce4_8422_2325;
@@ -168,6 +103,8 @@ pub fn content_hash(content: &Value) -> String {
 // --------------------------------------------------------------- traversal
 
 /// Same ordering as the sidebar: pinned first (newest pin first), then `order`.
+/// Built-in folders are never returned; `已归档` is appended explicitly when
+/// the caller opts in.
 fn ordered_children(ws: &Workspace, parent: Option<&str>) -> Vec<Node> {
     let mut list: Vec<&Node> = ws
         .nodes
@@ -186,37 +123,43 @@ fn ordered_children(ws: &Workspace, parent: Option<&str>) -> Vec<Node> {
     list.into_iter().cloned().collect()
 }
 
-fn next_order(ws: &Workspace, parent: Option<&str>) -> i64 {
-    ws.nodes
-        .iter()
-        .filter(|n| n.parent_id.as_deref() == parent)
-        .map(|n| n.order + 1)
-        .max()
-        .unwrap_or(0)
-}
-
-fn count_scope(ws: &Workspace, parent: Option<&str>, include_completed: bool) -> usize {
-    let mut total = 0;
-    let mut queue = vec![parent.map(|p| p.to_string())];
-    while let Some(current) = queue.pop() {
-        for node in ordered_children(ws, current.as_deref()) {
-            total += 1;
-            if node.kind == NodeKind::Folder {
-                queue.push(Some(node.id.clone()));
-            }
+fn walk_scope(ws: &Workspace, parent: Option<&str>, include_completed: bool, out: &mut Vec<Node>) {
+    for node in ordered_children(ws, parent) {
+        if node.id == TRASH_ID {
+            continue;
         }
-        if current.is_none() && include_completed {
-            total += 1; // the 「已归档」 page itself
-            total += ordered_children(ws, Some(COMPLETED_ID)).len();
+        out.push(node.clone());
+        if node.kind == NodeKind::Folder {
+            walk_scope(ws, Some(&node.id), include_completed, out);
         }
     }
-    total
+
+    if parent.is_none() && include_completed {
+        if let Some(completed) = ws.nodes.iter().find(|node| node.id == COMPLETED_ID) {
+            out.push(completed.clone());
+            walk_scope(ws, Some(COMPLETED_ID), include_completed, out);
+        }
+    }
+}
+
+/// Every node a run can touch, in stable tree order. The trash root and all of
+/// its descendants are excluded; the completed root is opt-in.
+fn scope_nodes(ws: &Workspace, include_completed: bool) -> Vec<Node> {
+    let mut out = Vec::new();
+    walk_scope(ws, None, include_completed, &mut out);
+    out
 }
 
 // ------------------------------------------------------------------ images
 
 fn mime_for(name: &str) -> &'static str {
-    match name.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str() {
+    match name
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",
         "gif" => "image/gif",
@@ -252,55 +195,9 @@ impl ImageUploads {
             failed: 0,
         }
     }
-}
 
-fn collect_asset_refs(nodes: &[BlockNode], out: &mut Vec<String>) {
-    for node in nodes {
-        if node.block.get("type").and_then(Value::as_str) == Some("image") {
-            if let Some(rel) = node
-                .block
-                .pointer(&format!("/image/{ASSET_MARKER}"))
-                .and_then(Value::as_str)
-            {
-                if !out.iter().any(|existing| existing == rel) {
-                    out.push(rel.to_string());
-                }
-            }
-        }
-        collect_asset_refs(&node.children, out);
-    }
-}
-
-fn apply_asset_results(nodes: &mut [BlockNode], uploads: &ImageUploads) {
-    for node in nodes.iter_mut() {
-        if node.block.get("type").and_then(Value::as_str) == Some("image") {
-            if let Some(rel) = node
-                .block
-                .pointer(&format!("/image/{ASSET_MARKER}"))
-                .and_then(Value::as_str)
-                .map(str::to_string)
-            {
-                let name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
-                match uploads.done.get(&rel) {
-                    Some(Some(id)) => node.block = image_block(id),
-                    _ => {
-                        node.block = notion_blocks::placeholder(&format!("Image not synced: {name}"));
-                    }
-                }
-            }
-        }
-        apply_asset_results(&mut node.children, uploads);
-    }
-}
-
-impl ImageUploads {
     /// Uploads every referenced image once; failures are remembered, not fatal.
-    async fn upload_all(
-        &mut self,
-        client: &NotionClient,
-        paths: &Paths,
-        refs: &[String],
-    ) {
+    async fn upload_all(&mut self, client: &NotionClient, paths: &Paths, refs: &[String]) {
         for rel in refs {
             if self.done.contains_key(rel) {
                 continue;
@@ -324,9 +221,7 @@ impl ImageUploads {
         paths: &Paths,
         rel: &str,
     ) -> Result<String, String> {
-        let file = paths
-            .asset_file(rel)
-            .map_err(|err| err.message)?;
+        let file = paths.asset_file(rel).map_err(|err| err.message)?;
         let meta = tokio::fs::metadata(&file)
             .await
             .map_err(|_| "Local file is gone".to_string())?;
@@ -365,11 +260,55 @@ impl ImageUploads {
     }
 }
 
+fn collect_asset_refs(nodes: &[BlockNode], out: &mut Vec<String>) {
+    for node in nodes {
+        if node.block.get("type").and_then(Value::as_str) == Some("image") {
+            if let Some(rel) = node
+                .block
+                .pointer(&format!("/image/{ASSET_MARKER}"))
+                .and_then(Value::as_str)
+            {
+                if !out.iter().any(|existing| existing == rel) {
+                    out.push(rel.to_string());
+                }
+            }
+        }
+        collect_asset_refs(&node.children, out);
+    }
+}
+
+fn apply_asset_results(nodes: &mut [BlockNode], uploads: &ImageUploads) {
+    for node in nodes.iter_mut() {
+        if node.block.get("type").and_then(Value::as_str) == Some("image") {
+            if let Some(rel) = node
+                .block
+                .pointer(&format!("/image/{ASSET_MARKER}"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            {
+                let name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
+                match uploads.done.get(&rel) {
+                    Some(Some(id)) => node.block = image_block(id),
+                    _ => {
+                        node.block =
+                            notion_blocks::placeholder(&format!("Image not synced: {name}"));
+                    }
+                }
+            }
+        }
+        apply_asset_results(&mut node.children, uploads);
+    }
+}
+
 // ------------------------------------------------------------------ writing
 
 /// Appends blocks to a page/block, walking children level by level because
 /// Notion nests at most two levels per request.
-async fn append_tree(client: &NotionClient, parent_id: &str, blocks: &[BlockNode]) -> AppResult<()> {
+async fn append_tree(
+    client: &NotionClient,
+    parent_id: &str,
+    blocks: &[BlockNode],
+) -> AppResult<()> {
     let mut queue: Vec<(String, &[BlockNode])> = vec![(parent_id.to_string(), blocks)];
     while let Some((parent, level)) = queue.pop() {
         if level.is_empty() {
@@ -387,18 +326,29 @@ async fn append_tree(client: &NotionClient, parent_id: &str, blocks: &[BlockNode
             let results = response
                 .get("results")
                 .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            for item in &results {
-                if let Some(id) = item.get("id").and_then(Value::as_str) {
-                    created.push(id.to_string());
-                }
+                .ok_or_else(|| {
+                    AppError::new(
+                        "notion_append_failed",
+                        "Notion returned no block results; the content may be incomplete",
+                    )
+                })?;
+            if results.len() != chunk.len() {
+                return Err(AppError::new(
+                    "notion_append_failed",
+                    "Notion returned a different number of blocks than were sent; the content may be incomplete",
+                ));
             }
+            created.extend(
+                results
+                    .iter()
+                    .filter_map(|item| item.get("id").and_then(Value::as_str))
+                    .map(str::to_string),
+            );
         }
         if created.len() != level.len() {
             return Err(AppError::new(
                 "notion_append_failed",
-                "Notion returned a different number of blocks than were sent; the content may have been truncated",
+                "Notion did not return ids for every appended block",
             ));
         }
         for (node, id) in level.iter().zip(created) {
@@ -410,7 +360,7 @@ async fn append_tree(client: &NotionClient, parent_id: &str, blocks: &[BlockNode
     Ok(())
 }
 
-/// Deletes every direct child of a page (used by "overwrite").
+/// Deletes every direct child of a page before a body rewrite.
 async fn clear_children(client: &NotionClient, page_id: &str) -> AppResult<usize> {
     let mut removed = 0;
     for _ in 0..64 {
@@ -447,7 +397,12 @@ async fn create_page(client: &NotionClient, parent_page: &str, title: &str) -> A
     page.get("id")
         .and_then(Value::as_str)
         .map(str::to_string)
-        .ok_or_else(|| AppError::new("notion_create_failed", "Notion did not return the new page id"))
+        .ok_or_else(|| {
+            AppError::new(
+                "notion_create_failed",
+                "Notion did not return the new page id",
+            )
+        })
 }
 
 async fn rename_page(client: &NotionClient, page_id: &str, title: &str) -> AppResult<()> {
@@ -460,79 +415,95 @@ async fn rename_page(client: &NotionClient, page_id: &str, title: &str) -> AppRe
     Ok(())
 }
 
-// ------------------------------------------------------------------ reading
-
-/// Fetches a page's metadata: `(last_edited_time, title)`.
-///
-/// `Ok(None)` means the page no longer exists (deleted or un-shared), which the
-/// caller treats as "rebuild it" rather than as an error.
-async fn remote_page_meta(
-    client: &NotionClient,
-    page_id: &str,
-) -> AppResult<Option<(String, String)>> {
+/// `false` means the page no longer exists (deleted, trashed or un-shared).
+async fn remote_page_exists(client: &NotionClient, page_id: &str) -> AppResult<bool> {
     match client.get(&format!("/pages/{page_id}")).await {
         Ok(page) => {
-            let edited = page
-                .get("last_edited_time")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            Ok(Some((edited, notion::page_title(&page))))
+            let removed = page.get("archived").and_then(Value::as_bool) == Some(true)
+                || page.get("in_trash").and_then(Value::as_bool) == Some(true);
+            Ok(!removed)
         }
-        Err(err) if err.code == "notion_not_found" => Ok(None),
+        Err(err) if err.code == "notion_not_found" => Ok(false),
         Err(err) => Err(err),
     }
 }
 
-/// Reads a page's whole block tree, attaching each block's children inline.
-async fn fetch_blocks(
-    client: &NotionClient,
-    block_id: &str,
-    depth: usize,
-) -> AppResult<Vec<Value>> {
-    if depth > MAX_DEPTH {
-        return Ok(Vec::new());
-    }
-    let mut out: Vec<Value> = Vec::new();
-    let mut cursor: Option<String> = None;
-    loop {
-        let url = match &cursor {
-            Some(c) => format!("/blocks/{block_id}/children?page_size=100&start_cursor={c}"),
-            None => format!("/blocks/{block_id}/children?page_size=100"),
+// -------------------------------------------------------------- decisions
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct FolderPlan {
+    create: bool,
+    rename: bool,
+    move_page: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct DocPlan {
+    create: bool,
+    rename: bool,
+    move_page: bool,
+    rewrite_body: bool,
+    /// A legacy link has no body fingerprint. Record the current body without
+    /// rewriting Notion unless the local document was modified after the last
+    /// known push.
+    baseline: bool,
+}
+
+fn plan_folder(
+    link: Option<&FolderLink>,
+    remote_exists: bool,
+    title: &str,
+    parent_page_id: &str,
+) -> FolderPlan {
+    let Some(link) = link else {
+        return FolderPlan {
+            create: true,
+            ..FolderPlan::default()
         };
-        let response = client.get(&url).await?;
-        let results = response
-            .get("results")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        for mut block in results {
-            let has_children = block
-                .get("has_children")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            if has_children {
-                if let Some(id) = block.get("id").and_then(Value::as_str).map(str::to_string) {
-                    let kids = Box::pin(fetch_blocks(client, &id, depth + 1)).await?;
-                    block["children"] = Value::Array(kids);
-                }
-            }
-            out.push(block);
-        }
-        let more = response
-            .get("has_more")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let next = response
-            .get("next_cursor")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        match (more, next) {
-            (true, Some(next)) => cursor = Some(next),
-            _ => break,
-        }
+    };
+    if !remote_exists {
+        return FolderPlan {
+            create: true,
+            ..FolderPlan::default()
+        };
     }
-    Ok(out)
+    FolderPlan {
+        create: false,
+        rename: !link.title.is_empty() && link.title != title,
+        move_page: !link.parent_page_id.is_empty() && link.parent_page_id != parent_page_id,
+    }
+}
+
+fn plan_doc(
+    link: Option<&PageLink>,
+    remote_exists: bool,
+    title: &str,
+    parent_page_id: &str,
+    local_hash: &str,
+    doc_updated_at: u64,
+) -> DocPlan {
+    let Some(link) = link else {
+        return DocPlan {
+            create: true,
+            ..DocPlan::default()
+        };
+    };
+    if !link.ok || !remote_exists {
+        return DocPlan {
+            create: true,
+            ..DocPlan::default()
+        };
+    }
+
+    let legacy = link.local_hash.is_empty();
+    let legacy_changed = legacy && doc_updated_at > link.doc_updated_at;
+    DocPlan {
+        create: false,
+        rename: !link.title.is_empty() && link.title != title,
+        move_page: !link.parent_page_id.is_empty() && link.parent_page_id != parent_page_id,
+        rewrite_body: (!legacy && link.local_hash != local_hash) || legacy_changed,
+        baseline: legacy && !legacy_changed,
+    }
 }
 
 // --------------------------------------------------------------------- run
@@ -543,13 +514,11 @@ struct Ctx<'a, R: Runtime> {
     paths: &'a Paths,
     ws: Workspace,
     cfg: notion::NotionConfig,
-    options: SyncOptions,
     stats: SyncStats,
     uploads: ImageUploads,
+    include_completed: bool,
     done: usize,
     total: usize,
-    ws_dirty: bool,
-    imported: usize,
 }
 
 impl<'a, R: Runtime> Ctx<'a, R> {
@@ -558,512 +527,295 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         emit(self.app, phase, self.done, self.total, current);
     }
 
-    fn node(&self, id: &str) -> Option<&Node> {
-        self.ws.nodes.iter().find(|n| n.id == id)
+    fn fail(&mut self, id: &str, title: &str, message: impl Into<String>) {
+        self.stats.failures.push(SyncFailure {
+            doc_id: id.to_string(),
+            title: title.to_string(),
+            message: message.into(),
+        });
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Decision {
-    Skip,
-    Push,
-    Pull,
-    Baseline,
-    Conflict,
-}
-
-/// Creates or reuses the Notion page for a folder and returns its page id.
-async fn ensure_folder_page<R: Runtime>(
+async fn sync_folder<R: Runtime>(
     ctx: &mut Ctx<'_, R>,
     folder: &Node,
     notion_parent: &str,
-) -> AppResult<String> {
-    if let Some(page) = ctx.cfg.folders.get(&folder.id).cloned() {
-        // keep the local name authoritative: a rename in Novion should reach
-        // Notion on the next push
-        if ctx.options.direction.pushes() {
-            let _ = rename_page(ctx.client, &page, &folder.name).await;
+) -> Option<String> {
+    let existing = ctx.cfg.folders.get(&folder.id).cloned();
+    let remote_exists = if existing.is_some() {
+        match remote_page_exists(ctx.client, &existing.as_ref().unwrap().page_id).await {
+            Ok(exists) => exists,
+            Err(err) => {
+                ctx.fail(&folder.id, &folder.name, err.message);
+                return None;
+            }
         }
-        return Ok(page); // created by a previous run; keep the user's edits
-    }
-    let page = create_page(ctx.client, notion_parent, &folder.name).await?;
-    ctx.cfg.folders.insert(folder.id.clone(), page.clone());
-    ctx.stats.folders_created += 1;
-    Ok(page)
-}
+    } else {
+        false
+    };
+    let plan = plan_folder(
+        existing.as_ref(),
+        remote_exists,
+        &folder.name,
+        notion_parent,
+    );
 
-fn decide(
-    has_link: bool,
-    local_changed: bool,
-    remote_changed: bool,
-    direction: SyncDirection,
-    policy: ConflictPolicy,
-) -> Decision {
-    if !has_link {
-        return if direction.pushes() {
-            Decision::Push
-        } else {
-            Decision::Skip
+    if plan.create {
+        // A stale mapping must never make a later run skip the replacement.
+        ctx.cfg.folders.remove(&folder.id);
+        let page_id = match create_page(ctx.client, notion_parent, &folder.name).await {
+            Ok(id) => id,
+            Err(err) => {
+                ctx.fail(&folder.id, &folder.name, err.message);
+                return None;
+            }
         };
+        ctx.cfg.folders.insert(
+            folder.id.clone(),
+            FolderLink {
+                page_id: page_id.clone(),
+                parent_page_id: notion_parent.to_string(),
+                title: folder.name.clone(),
+            },
+        );
+        ctx.stats.folders_created += 1;
+        return Some(page_id);
     }
-    if direction == SyncDirection::Push {
-        // legacy single-direction behaviour is decided by the caller
-        return Decision::Skip;
-    }
-    match (local_changed, remote_changed) {
-        (false, false) => Decision::Skip,
-        (true, false) => {
-            if direction.pushes() {
-                Decision::Push
-            } else {
-                Decision::Skip
-            }
+
+    let mut link = existing.expect("non-create folder plan has a link");
+    let page_id = link.page_id.clone();
+
+    if plan.rename {
+        match rename_page(ctx.client, &page_id, &folder.name).await {
+            Ok(()) => link.title = folder.name.clone(),
+            Err(err) => ctx.fail(&folder.id, &folder.name, err.message),
         }
-        (false, true) => {
-            if direction.pulls() {
-                Decision::Pull
-            } else {
-                Decision::Skip
-            }
-        }
-        (true, true) => match policy {
-            ConflictPolicy::Local => {
-                if direction.pushes() {
-                    Decision::Push
-                } else {
-                    Decision::Conflict
-                }
-            }
-            ConflictPolicy::Remote => {
-                if direction.pulls() {
-                    Decision::Pull
-                } else {
-                    Decision::Conflict
-                }
-            }
-            ConflictPolicy::Ask => Decision::Conflict,
-        },
     }
+    if plan.move_page {
+        match ctx.client.move_page(&page_id, notion_parent).await {
+            Ok(_) => link.parent_page_id = notion_parent.to_string(),
+            Err(err) => ctx.fail(&folder.id, &folder.name, err.message),
+        }
+    }
+
+    // Legacy folder mappings were just a page id. Establish the title/parent
+    // baseline once so later local changes can be detected without a remote read.
+    if link.title.is_empty() {
+        link.title = folder.name.clone();
+    }
+    if link.parent_page_id.is_empty() {
+        link.parent_page_id = notion_parent.to_string();
+    }
+    ctx.cfg.folders.insert(folder.id.clone(), link);
+    Some(page_id)
 }
 
-async fn sync_doc<R: Runtime>(
-    ctx: &mut Ctx<'_, R>,
-    node: &Node,
-    notion_parent: &str,
-    force_push: bool,
-) -> AppResult<()> {
-    let existing = ctx.cfg.pages.get(&node.id).cloned();
-    let file = ctx.paths.doc_file(&node.id)?;
-    let doc = read_json::<DocFile>(&file).await?;
-    let title = if node.name.trim().is_empty() {
-        doc.title.clone()
-    } else {
-        node.name.clone()
-    };
-    let local_hash = content_hash(&doc.content);
-
-    // ---- decide what this document needs
-    let mut remote_time = existing
-        .as_ref()
-        .map(|link| link.remote_edited_at.clone())
-        .unwrap_or_default();
-    let mut remote_title = String::new();
-    let mut page_missing = false;
-
-    let decision = if force_push {
-        Decision::Push
-    } else if ctx.options.direction == SyncDirection::Push {
-        match &existing {
-            None => Decision::Push,
-            Some(link) => {
-                if !link.ok {
-                    Decision::Push
-                } else if ctx.options.mode == SyncMode::Overwrite
-                    && link.doc_updated_at < doc.updated_at
-                {
-                    Decision::Push
-                } else {
-                    Decision::Skip
-                }
-            }
-        }
-    } else if let Some(link) = &existing {
-        let local_changed = !link.local_hash.is_empty() && link.local_hash != local_hash;
-        let mut remote_changed = false;
-        if ctx.options.direction.pulls() {
-            match remote_page_meta(ctx.client, &link.page_id).await? {
-                Some((edited, remote_name)) => {
-                    remote_title = remote_name;
-                    remote_changed = !link.remote_edited_at.is_empty()
-                        && !edited.is_empty()
-                        && link.remote_edited_at != edited;
-                    remote_time = edited;
-                }
-                None => page_missing = true,
-            }
-        }
-        if page_missing {
-            Decision::Push
-        } else if link.local_hash.is_empty() {
-            // migrated link: record the baseline without touching either side
-            Decision::Baseline
-        } else {
-            decide(
-                true,
-                local_changed,
-                remote_changed,
-                ctx.options.direction,
-                ctx.options.conflict_policy,
-            )
-        }
-    } else {
-        Decision::Skip
-    };
-
-    // "New pages only" also governs the two-way mode: an already-synced page is
-    // never rewritten, even when only the local side changed.
-    let decision = if decision == Decision::Push
-        && !force_push
-        && ctx.options.mode == SyncMode::NewOnly
-        && !page_missing
-        && existing.as_ref().map(|link| link.ok).unwrap_or(false)
-    {
-        Decision::Skip
-    } else {
-        decision
-    };
-
-    match decision {
-        Decision::Skip => {
-            // a link without a remote timestamp (created by a push-only run or
-            // by an import) learns one here, without pulling anything
-            if ctx.options.direction.pulls() && !remote_time.is_empty() {
-                if let Some(link) = ctx.cfg.pages.get_mut(&node.id) {
-                    if link.remote_edited_at.is_empty() {
-                        link.remote_edited_at = remote_time.clone();
-                        link.synced_at = now_ms();
-                    }
-                }
-            }
-            ctx.stats.pages_skipped += 1;
-            ctx.tick("docs", &title);
-            return Ok(());
-        }
-        Decision::Baseline => {
-            let remote = remote_time.clone();
-            if let Some(link) = ctx.cfg.pages.get_mut(&node.id) {
-                link.local_hash = local_hash;
-                link.remote_edited_at = remote;
-                link.synced_at = now_ms();
-            }
-            ctx.stats.pages_skipped += 1;
-            ctx.tick("docs", &title);
-            return Ok(());
-        }
-        Decision::Conflict => {
-            if let Some(link) = &existing {
-                ctx.stats.conflicts.push(SyncConflict {
-                    doc_id: node.id.clone(),
-                    title: title.clone(),
-                    page_id: link.page_id.clone(),
-                    url: notion::page_url(&link.page_id),
-                });
-            }
-            ctx.tick("docs", &title);
-            return Ok(());
-        }
-        Decision::Pull => {
-            let link = existing.clone().expect("pull needs an existing link");
-            pull_doc(ctx, &node.id, &title, &link, &remote_title).await?;
-            return Ok(());
-        }
-        Decision::Push => {}
-    }
-
-    // ---- push
-    let mut blocks = notion_blocks::convert_doc(&doc.content);
+async fn prepare_blocks<R: Runtime>(ctx: &mut Ctx<'_, R>, content: &Value) -> Vec<BlockNode> {
+    let mut blocks = notion_blocks::convert_doc(content);
     let mut refs = Vec::new();
     collect_asset_refs(&blocks, &mut refs);
     ctx.uploads.upload_all(ctx.client, ctx.paths, &refs).await;
     apply_asset_results(&mut blocks, &ctx.uploads);
+    blocks
+}
 
-    let mut page_id = None;
-    let mut created = false;
-    if existing.is_some() && !page_missing {
-        let link = existing.as_ref().unwrap();
-        let outcome = async {
-            rename_page(ctx.client, &link.page_id, &title).await?;
-            clear_children(ctx.client, &link.page_id).await?;
-            append_tree(ctx.client, &link.page_id, &blocks).await
+async fn sync_doc<R: Runtime>(ctx: &mut Ctx<'_, R>, node: &Node, notion_parent: &str) {
+    let title = node.name.clone();
+    let file = match ctx.paths.doc_file(&node.id) {
+        Ok(file) => file,
+        Err(err) => {
+            ctx.fail(&node.id, &title, err.message);
+            return;
         }
-        .await;
-        match outcome {
-            Ok(()) => page_id = Some(link.page_id.clone()),
-            Err(err) if err.code == "notion_not_found" => {
-                // the page was deleted / un-shared since the last sync
-                ctx.cfg.pages.remove(&node.id);
-                page_id = None;
-            }
+    };
+    let doc = match read_json::<DocFile>(&file).await {
+        Ok(doc) => doc,
+        Err(err) => {
+            ctx.fail(&node.id, &title, err.message);
+            return;
+        }
+    };
+    let effective_title = if title.trim().is_empty() {
+        doc.title.clone()
+    } else {
+        title
+    };
+    let local_hash = content_hash(&doc.content);
+    let existing = ctx.cfg.pages.get(&node.id).cloned();
+    let remote_exists = if existing.is_some() {
+        match remote_page_exists(ctx.client, &existing.as_ref().unwrap().page_id).await {
+            Ok(exists) => exists,
             Err(err) => {
-                ctx.stats.failures.push(SyncFailure {
-                    doc_id: node.id.clone(),
-                    title: title.clone(),
-                    message: err.message,
-                });
-                ctx.tick("docs", &title);
-                return Ok(());
+                ctx.fail(&node.id, &effective_title, err.message);
+                return;
             }
         }
-    }
+    } else {
+        false
+    };
+    let plan = plan_doc(
+        existing.as_ref(),
+        remote_exists,
+        &effective_title,
+        notion_parent,
+        &local_hash,
+        doc.updated_at,
+    );
 
-    if page_id.is_none() {
-        let id = create_page(ctx.client, notion_parent, &title).await?;
-        if let Err(err) = append_tree(ctx.client, &id, &blocks).await {
+    if plan.create {
+        // Drop a stale or incomplete mapping before creating its replacement.
+        ctx.cfg.pages.remove(&node.id);
+        let blocks = prepare_blocks(ctx, &doc.content).await;
+        let page_id = match create_page(ctx.client, notion_parent, &effective_title).await {
+            Ok(id) => id,
+            Err(err) => {
+                ctx.fail(&node.id, &effective_title, err.message);
+                return;
+            }
+        };
+        if let Err(err) = append_tree(ctx.client, &page_id, &blocks).await {
             ctx.cfg.pages.insert(
                 node.id.clone(),
                 PageLink {
-                    page_id: id,
-                    title: title.clone(),
+                    page_id,
+                    parent_page_id: notion_parent.to_string(),
+                    title: effective_title.clone(),
                     doc_updated_at: 0,
                     synced_at: now_ms(),
                     ok: false,
                     local_hash: String::new(),
-                    remote_edited_at: String::new(),
                 },
             );
-            ctx.stats.failures.push(SyncFailure {
-                doc_id: node.id.clone(),
-                title: title.clone(),
-                message: err.message,
-            });
-            ctx.tick("docs", &title);
-            return Ok(());
+            ctx.fail(&node.id, &effective_title, err.message);
+            return;
         }
-        created = true;
-        page_id = Some(id);
-    }
-
-    let Some(id) = page_id else {
-        ctx.tick("docs", &title);
-        return Ok(());
-    };
-
-    // record the revision we just wrote; when syncing both ways also remember
-    // Notion's own stamp so the next run does not read our write as a remote edit
-    if ctx.options.direction.pulls() {
-        if let Ok(Some((edited, _))) = remote_page_meta(ctx.client, &id).await {
-            remote_time = edited;
-        }
-    } else {
-        remote_time = String::new();
-    }
-
-    ctx.cfg.pages.insert(
-        node.id.clone(),
-        PageLink {
-            page_id: id,
-            title: title.clone(),
-            doc_updated_at: doc.updated_at,
-            synced_at: now_ms(),
-            ok: true,
-            local_hash,
-            remote_edited_at: remote_time,
-        },
-    );
-
-    if created {
+        ctx.cfg.pages.insert(
+            node.id.clone(),
+            PageLink {
+                page_id,
+                parent_page_id: notion_parent.to_string(),
+                title: effective_title.clone(),
+                doc_updated_at: doc.updated_at,
+                synced_at: now_ms(),
+                ok: true,
+                local_hash,
+            },
+        );
         ctx.stats.pages_created += 1;
-    } else {
+        return;
+    }
+
+    let mut link = existing.expect("non-create document plan has a link");
+    let page_id = link.page_id.clone();
+    let mut changed = false;
+
+    if plan.rename {
+        match rename_page(ctx.client, &page_id, &effective_title).await {
+            Ok(()) => {
+                link.title = effective_title.clone();
+                changed = true;
+            }
+            Err(err) => ctx.fail(&node.id, &effective_title, err.message),
+        }
+    }
+
+    if plan.move_page {
+        match ctx.client.move_page(&page_id, notion_parent).await {
+            Ok(_) => {
+                link.parent_page_id = notion_parent.to_string();
+                changed = true;
+            }
+            Err(err) => ctx.fail(&node.id, &effective_title, err.message),
+        }
+    }
+
+    if plan.rewrite_body {
+        let blocks = prepare_blocks(ctx, &doc.content).await;
+        let outcome = async {
+            clear_children(ctx.client, &page_id).await?;
+            append_tree(ctx.client, &page_id, &blocks).await
+        }
+        .await;
+        match outcome {
+            Ok(()) => {
+                link.local_hash = local_hash;
+                link.doc_updated_at = doc.updated_at;
+                link.ok = true;
+                changed = true;
+            }
+            Err(err) => {
+                link.ok = false;
+                ctx.fail(&node.id, &effective_title, err.message);
+            }
+        }
+    } else if plan.baseline {
+        // No remote write: establish the fingerprint needed by future runs.
+        link.local_hash = local_hash;
+        link.doc_updated_at = doc.updated_at;
+    }
+
+    // Backfill caches added after the original one-way sync shipped. Empty
+    // values mean "unknown", so they must not trigger a rename or move.
+    if link.title.is_empty() {
+        link.title = effective_title.clone();
+    }
+    if link.parent_page_id.is_empty() {
+        link.parent_page_id = notion_parent.to_string();
+    }
+
+    if changed {
+        link.synced_at = now_ms();
         ctx.stats.pages_updated += 1;
+    } else {
+        ctx.stats.pages_skipped += 1;
     }
-    ctx.tick("docs", &title);
-    Ok(())
+    ctx.cfg.pages.insert(node.id.clone(), link);
 }
 
-/// Replaces a local document with the Notion body.
-async fn pull_doc<R: Runtime>(
-    ctx: &mut Ctx<'_, R>,
-    doc_id: &str,
-    title: &str,
-    link: &PageLink,
-    remote_title: &str,
-) -> AppResult<()> {
-    let blocks = fetch_blocks(ctx.client, &link.page_id, 0).await?;
-    let content = notion_blocks::blocks_to_doc(&blocks);
-    let file = ctx.paths.doc_file(doc_id)?;
-    let created_at = read_json::<DocFile>(&file)
-        .await
-        .map(|doc| doc.created_at)
-        .unwrap_or_else(|_| now_ms());
+async fn sync_tree<R: Runtime>(ctx: &mut Ctx<'_, R>) {
+    let mut queue: Vec<(String, Option<String>)> = vec![(ctx.cfg.parent_page_id.clone(), None)];
+    let mut seen_folders: HashSet<String> = HashSet::new();
 
-    // a rename in Notion renames the note here too
-    let mut final_title = title.to_string();
-    if !remote_title.trim().is_empty() && remote_title.trim() != title {
-        final_title = remote_title.trim().to_string();
-        if let Some(node) = ctx.ws.nodes.iter_mut().find(|n| n.id == doc_id) {
-            node.name = final_title.clone();
-            node.updated_at = now_ms();
-            ctx.ws_dirty = true;
-        }
-    } else if let Some(node) = ctx.node(doc_id) {
-        final_title = node.name.clone();
-    }
-
-    let doc = DocFile {
-        id: doc_id.to_string(),
-        title: final_title.clone(),
-        created_at,
-        updated_at: now_ms(),
-        schema_version: 1,
-        content,
-    };
-    write_json_atomic(&file, &doc).await?;
-
-    let hash = content_hash(&doc.content);
-    let edited = remote_page_meta(ctx.client, &link.page_id)
-        .await?
-        .map(|(edited, _)| edited)
-        .unwrap_or_default();
-    if let Some(entry) = ctx.cfg.pages.get_mut(doc_id) {
-        entry.title = final_title.clone();
-        entry.local_hash = hash;
-        entry.remote_edited_at = edited;
-        entry.synced_at = now_ms();
-        entry.doc_updated_at = doc.updated_at;
-        entry.ok = true;
-    }
-
-    ctx.stats.pages_pulled += 1;
-    ctx.tick("pull", &final_title);
-    Ok(())
-}
-
-/// Adds pages that exist in Notion but not yet locally.
-async fn import_new_pages<R: Runtime>(ctx: &mut Ctx<'_, R>) -> AppResult<()> {
-    let mut known: HashSet<String> = ctx.cfg.pages.values().map(|l| l.page_id.clone()).collect();
-    // page id → local folder id, so an existing folder is still walked for
-    // pages that were created inside it on the Notion side
-    let folder_of_page: HashMap<String, String> = ctx
-        .cfg
-        .folders
-        .iter()
-        .map(|(folder, page)| (page.clone(), folder.clone()))
-        .collect();
-    for page in ctx.cfg.folders.values() {
-        known.insert(page.clone());
-    }
-
-    // (notion page id, local parent, depth)
-    let mut queue: Vec<(String, Option<String>, usize)> =
-        vec![(ctx.cfg.parent_page_id.clone(), None, 0)];
-    let mut visited: HashSet<String> = HashSet::new();
-
-    while let Some((notion_page, local_parent, depth)) = queue.pop() {
-        if depth > MAX_DEPTH || ctx.imported >= MAX_IMPORTS {
-            continue;
-        }
-        if !visited.insert(notion_page.clone()) {
-            continue;
-        }
-        let blocks = fetch_blocks(ctx.client, &notion_page, 0).await?;
-        for block in blocks {
-            if block.get("type").and_then(Value::as_str) != Some("child_page") {
-                continue;
-            }
-            if ctx.imported >= MAX_IMPORTS {
-                break;
-            }
-            let Some(page_id) = block.get("id").and_then(Value::as_str).map(str::to_string) else {
-                continue;
-            };
-            if known.contains(&page_id) {
-                // an existing folder may hold pages created in Notion since the
-                // last run; walk into it, but never re-import a document
-                if let Some(folder_id) = folder_of_page.get(&page_id) {
-                    queue.push((page_id.clone(), Some(folder_id.clone()), depth + 1));
+    while let Some((notion_parent, ws_parent)) = queue.pop() {
+        for node in ordered_children(&ctx.ws, ws_parent.as_deref()) {
+            match node.kind {
+                NodeKind::Folder => {
+                    if seen_folders.insert(node.id.clone()) {
+                        if let Some(page_id) = sync_folder(ctx, &node, &notion_parent).await {
+                            queue.push((page_id, Some(node.id.clone())));
+                        }
+                    }
+                    ctx.tick("folders", &node.name);
                 }
-                continue;
+                NodeKind::Doc => {
+                    sync_doc(ctx, &node, &notion_parent).await;
+                    ctx.tick("docs", &node.name);
+                }
             }
-            let title = block
-                .pointer("/child_page/title")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .trim()
-                .chars()
-                .take(160)
-                .collect::<String>();
-            let title = if title.is_empty() {
-                "Untitled".to_string()
-            } else {
-                title
-            };
+        }
 
-            let children = fetch_blocks(ctx.client, &page_id, 0).await?;
-            let has_child_pages = children
-                .iter()
-                .any(|child| child.get("type").and_then(Value::as_str) == Some("child_page"));
-
-            if has_child_pages {
-                let id = format!("f_{}", short_id());
-                let order = next_order(&ctx.ws, local_parent.as_deref());
-                ctx.ws.nodes.push(Node::new(
-                    id.clone(),
-                    NodeKind::Folder,
-                    title.clone(),
-                    local_parent.clone(),
-                    order,
-                ));
-                ctx.ws.updated_at = now_ms();
-                ctx.ws_dirty = true;
-                ctx.cfg.folders.insert(id.clone(), page_id.clone());
-                known.insert(page_id.clone());
-                queue.push((page_id.clone(), Some(id), depth + 1));
-            } else {
-                let id = format!("d_{}", short_id());
-                let order = next_order(&ctx.ws, local_parent.as_deref());
-                ctx.ws.nodes.push(Node::new(
-                    id.clone(),
-                    NodeKind::Doc,
-                    title.clone(),
-                    local_parent.clone(),
-                    order,
-                ));
-                ctx.ws.updated_at = now_ms();
-                ctx.ws_dirty = true;
-
-                let content = notion_blocks::blocks_to_doc(&children);
-                let now = now_ms();
-                let doc = DocFile {
-                    id: id.clone(),
-                    title: title.clone(),
-                    created_at: now,
-                    updated_at: now,
-                    schema_version: 1,
-                    content,
-                };
-                write_json_atomic(&ctx.paths.doc_file(&id)?, &doc).await?;
-
-                ctx.cfg.pages.insert(
-                    id.clone(),
-                    PageLink {
-                        page_id: page_id.clone(),
-                        title: title.clone(),
-                        doc_updated_at: now,
-                        synced_at: now,
-                        ok: true,
-                        local_hash: content_hash(&doc.content),
-                        // filled in by the next run without pulling
-                        remote_edited_at: String::new(),
-                    },
-                );
-                known.insert(page_id.clone());
-                ctx.imported += 1;
-                ctx.stats.pages_imported += 1;
-                ctx.tick("import", &title);
+        if ws_parent.is_none() {
+            // `ordered_children` deliberately omits built-in system folders.
+            // The completed subtree is included only when the user opts in.
+            // Trash is never queued, so none of its descendants are touched.
+            if ctx.include_completed {
+                if let Some(completed) = ctx
+                    .ws
+                    .nodes
+                    .iter()
+                    .find(|node| node.id == COMPLETED_ID)
+                    .cloned()
+                {
+                    if seen_folders.insert(completed.id.clone()) {
+                        if let Some(page_id) = sync_folder(ctx, &completed, &notion_parent).await {
+                            queue.push((page_id, Some(completed.id.clone())));
+                        }
+                    }
+                    ctx.tick("folders", &completed.name);
+                }
             }
         }
     }
-    Ok(())
 }
 
 // ------------------------------------------------------------------- entry
@@ -1093,21 +845,18 @@ async fn build_ctx<'a, R: Runtime>(
     let cfg = notion::snapshot(app);
     validate(&cfg)?;
     let ws = workspace::load_shared(paths).await?.as_ref().clone();
-
-    let total = count_scope(&ws, None, options.include_completed);
+    let total = scope_nodes(&ws, options.include_completed).len();
     Ok(Ctx {
         app,
         client,
         paths,
         ws,
         cfg,
-        options,
         stats: SyncStats::default(),
         uploads: ImageUploads::new(),
+        include_completed: options.include_completed,
         done: 0,
         total,
-        ws_dirty: false,
-        imported: 0,
     })
 }
 
@@ -1120,117 +869,15 @@ pub async fn notion_sync_docs<R: Runtime>(
     let paths = Paths::new(workspace_root(&app)?);
     paths.ensure_dirs().await?;
     let mut ctx = build_ctx(&app, &client, &paths, options).await?;
-    emit(&app, "prepare", 0, ctx.total, "");
-
-    // A pull-only run must never write to Notion, so it walks the existing
-    // page links instead of the local tree (which would create folder pages).
-    if ctx.options.direction == SyncDirection::Pull {
-        let entries: Vec<String> = ctx.cfg.pages.keys().cloned().collect();
-        for doc_id in entries {
-            let Some(node) = ctx.node(&doc_id).cloned() else {
-                continue;
-            };
-            if let Err(err) = sync_doc(&mut ctx, &node, "", false).await {
-                ctx.stats.failures.push(SyncFailure {
-                    doc_id: node.id.clone(),
-                    title: node.name.clone(),
-                    message: err.message,
-                });
-                ctx.tick("docs", &node.name);
-            }
-        }
-        if let Err(err) = import_new_pages(&mut ctx).await {
-            ctx.stats.failures.push(SyncFailure {
-                doc_id: String::new(),
-                title: ctx.cfg.parent_page_title.clone(),
-                message: err.message,
-            });
-        }
-        return finish(ctx).await;
-    }
-
-    let mut queue: Vec<(String, Option<String>)> = vec![(ctx.cfg.parent_page_id.clone(), None)];
-    let mut root_done = false;
-
-    while let Some((notion_parent, ws_parent)) = queue.pop() {
-        let children = ordered_children(&ctx.ws, ws_parent.as_deref());
-
-        for node in children {
-            match node.kind {
-                NodeKind::Folder => {
-                    match ensure_folder_page(&mut ctx, &node, &notion_parent).await {
-                        Ok(page) => {
-                            ctx.tick("folders", &node.name);
-                            queue.push((page, Some(node.id.clone())));
-                        }
-                        Err(err) => {
-                            ctx.stats.failures.push(SyncFailure {
-                                doc_id: node.id.clone(),
-                                title: node.name.clone(),
-                                message: err.message,
-                            });
-                            ctx.tick("folders", &node.name);
-                        }
-                    }
-                }
-                NodeKind::Doc => {
-                    if let Err(err) = sync_doc(&mut ctx, &node, &notion_parent, false).await {
-                        ctx.stats.failures.push(SyncFailure {
-                            doc_id: node.id.clone(),
-                            title: node.name.clone(),
-                            message: err.message,
-                        });
-                        ctx.tick("docs", &node.name);
-                    }
-                }
-            }
-        }
-
-        // 「已归档」 lives at the root but is excluded from `ordered_children`
-        if ws_parent.is_none() && !root_done {
-            root_done = true;
-            if ctx.options.include_completed {
-                let completed = ctx.ws.nodes.iter().find(|n| n.id == COMPLETED_ID).cloned();
-                if let Some(folder) = completed {
-                    match ensure_folder_page(&mut ctx, &folder, &notion_parent).await {
-                        Ok(page) => {
-                            ctx.tick("folders", &folder.name);
-                            queue.push((page, Some(folder.id.clone())));
-                        }
-                        Err(err) => {
-                            ctx.stats.failures.push(SyncFailure {
-                                doc_id: folder.id.clone(),
-                                title: folder.name.clone(),
-                                message: err.message,
-                            });
-                            ctx.tick("folders", &folder.name);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if ctx.options.direction.pulls() {
-        if let Err(err) = import_new_pages(&mut ctx).await {
-            ctx.stats.failures.push(SyncFailure {
-                doc_id: String::new(),
-                title: ctx.cfg.parent_page_title.clone(),
-                message: err.message,
-            });
-        }
-    }
-
+    emit(&app, "folders", 0, ctx.total, "");
+    sync_tree(&mut ctx).await;
     finish(ctx).await
 }
 
-/// Persists the config and the workspace, then builds the final statistics.
+/// Persists the page mapping and builds final statistics.
 async fn finish<R: Runtime>(mut ctx: Ctx<'_, R>) -> AppResult<SyncStats> {
     let now = now_ms();
     ctx.cfg.last_sync_at = now;
-    if ctx.ws_dirty {
-        workspace::save(ctx.paths, &ctx.ws).await?;
-    }
     notion::save(ctx.app, &ctx.cfg).await?;
     notion::remember(ctx.app, &ctx.cfg);
 
@@ -1242,139 +889,28 @@ async fn finish<R: Runtime>(mut ctx: Ctx<'_, R>) -> AppResult<SyncStats> {
     emit(
         ctx.app,
         "done",
-        stats.pages_created + stats.pages_updated + stats.pages_pulled + stats.pages_skipped,
+        stats.pages_created + stats.pages_updated + stats.pages_skipped,
         ctx.total,
         "",
     );
     Ok(stats)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ConflictAction {
-    /// Push the local body, replacing Notion's.
-    Local,
-    /// Pull Notion's body, replacing the local one.
-    Remote,
-    /// Keep both: pull Notion's body into a new note, then push the local one.
-    Both,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConflictResolution {
-    pub doc_id: String,
-    pub action: ConflictAction,
-}
-
-#[tauri::command]
-pub async fn notion_resolve_conflicts<R: Runtime>(
-    app: AppHandle<R>,
-    resolutions: Vec<ConflictResolution>,
-) -> AppResult<SyncStats> {
-    let client = NotionClient::from_app(&app)?;
-    let paths = Paths::new(workspace_root(&app)?);
-    paths.ensure_dirs().await?;
-    let mut ctx = build_ctx(
-        &app,
-        &client,
-        &paths,
-        SyncOptions {
-            include_completed: false,
-            mode: SyncMode::Overwrite,
-            direction: SyncDirection::Both,
-            conflict_policy: ConflictPolicy::Ask,
-        },
-    )
-    .await?;
-    emit(&app, "prepare", 0, ctx.total, "");
-
-    for resolution in resolutions {
-        let Some(link) = ctx.cfg.pages.get(&resolution.doc_id).cloned() else {
-            continue;
-        };
-        let Some(node) = ctx.node(&resolution.doc_id).cloned() else {
-            continue;
-        };
-        let notion_parent = ctx
-            .cfg
-            .folders
-            .get(node.parent_id.as_deref().unwrap_or(""))
-            .cloned()
-            .unwrap_or_else(|| ctx.cfg.parent_page_id.clone());
-
-        let result = match resolution.action {
-            ConflictAction::Local => sync_doc(&mut ctx, &node, &notion_parent, true).await,
-            ConflictAction::Remote => {
-                pull_doc(&mut ctx, &node.id, &node.name, &link, "").await
-            }
-            ConflictAction::Both => keep_both(&mut ctx, &node, &link, &notion_parent).await,
-        };
-        if let Err(err) = result {
-            ctx.stats.failures.push(SyncFailure {
-                doc_id: node.id.clone(),
-                title: node.name.clone(),
-                message: err.message,
-            });
-        }
-    }
-
-    let now = now_ms();
-    ctx.cfg.last_sync_at = now;
-    if ctx.ws_dirty {
-        workspace::save(&ctx.paths, &ctx.ws).await?;
-    }
-    notion::save(&app, &ctx.cfg).await?;
-    notion::remember(&app, &ctx.cfg);
-
-    let mut stats = std::mem::take(&mut ctx.stats);
-    stats.last_sync_at = now;
-    stats.parent_url = notion::page_url(&ctx.cfg.parent_page_id);
-    Ok(stats)
-}
-
-/// Pulls Notion's body into a new note and pushes the local body back.
-async fn keep_both<R: Runtime>(
-    ctx: &mut Ctx<'_, R>,
-    node: &Node,
-    link: &PageLink,
-    notion_parent: &str,
-) -> AppResult<()> {
-    let blocks = fetch_blocks(ctx.client, &link.page_id, 0).await?;
-    let content = notion_blocks::blocks_to_doc(&blocks);
-    let copy_title = format!("{} (Notion)", node.name);
-    let id = format!("d_{}", short_id());
-    let order = next_order(&ctx.ws, node.parent_id.as_deref());
-    ctx.ws.nodes.push(Node::new(
-        id.clone(),
-        NodeKind::Doc,
-        copy_title.clone(),
-        node.parent_id.clone(),
-        order,
-    ));
-    ctx.ws.updated_at = now_ms();
-    ctx.ws_dirty = true;
-
-    let now = now_ms();
-    let doc = DocFile {
-        id: id.clone(),
-        title: copy_title.clone(),
-        created_at: now,
-        updated_at: now,
-        schema_version: 1,
-        content,
-    };
-    write_json_atomic(&ctx.paths.doc_file(&id)?, &doc).await?;
-    // The copy deliberately has no page link: the original keeps that page, and
-    // a link pointing at it would make the next sync rewrite it with the copy.
-
-    // the original keeps the page and gets the local body
-    sync_doc(ctx, node, notion_parent, true).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn doc_link(title: &str, parent: &str, hash: &str) -> PageLink {
+        PageLink {
+            page_id: "page-1".to_string(),
+            parent_page_id: parent.to_string(),
+            title: title.to_string(),
+            doc_updated_at: 10,
+            synced_at: 10,
+            ok: true,
+            local_hash: hash.to_string(),
+        }
+    }
 
     #[test]
     fn hashes_stable_and_sensitive() {
@@ -1385,28 +921,164 @@ mod tests {
     }
 
     #[test]
-    fn conflict_matrix() {
-        // fully qualified: the two enums share variant names
-        let both = SyncDirection::Both;
-        let push = SyncDirection::Push;
-        let pull = SyncDirection::Pull;
-        let ask = ConflictPolicy::Ask;
+    fn document_plans_cover_create_skip_and_each_change() {
+        let link = doc_link("Title", "parent-a", "hash-a");
 
-        assert_eq!(decide(true, false, false, both, ask), Decision::Skip);
-        assert_eq!(decide(true, true, false, both, ask), Decision::Push);
-        assert_eq!(decide(true, false, true, both, ask), Decision::Pull);
-        assert_eq!(decide(true, true, true, both, ask), Decision::Conflict);
         assert_eq!(
-            decide(true, true, true, both, ConflictPolicy::Local),
-            Decision::Push
+            plan_doc(None, false, "Title", "parent-a", "hash-a", 10),
+            DocPlan {
+                create: true,
+                ..DocPlan::default()
+            }
         );
         assert_eq!(
-            decide(true, true, true, both, ConflictPolicy::Remote),
-            Decision::Pull
+            plan_doc(Some(&link), true, "Title", "parent-a", "hash-a", 10),
+            DocPlan::default()
         );
-        // a pull-only run never writes to Notion
-        assert_eq!(decide(true, true, false, pull, ask), Decision::Skip);
-        assert_eq!(decide(false, false, false, pull, ask), Decision::Skip);
-        assert_eq!(decide(false, false, false, push, ask), Decision::Push);
+        assert_eq!(
+            plan_doc(Some(&link), true, "Title", "parent-a", "hash-b", 20),
+            DocPlan {
+                rewrite_body: true,
+                ..DocPlan::default()
+            }
+        );
+        assert_eq!(
+            plan_doc(Some(&link), true, "Renamed", "parent-a", "hash-a", 10),
+            DocPlan {
+                rename: true,
+                ..DocPlan::default()
+            }
+        );
+        assert_eq!(
+            plan_doc(Some(&link), true, "Title", "parent-b", "hash-a", 10),
+            DocPlan {
+                move_page: true,
+                ..DocPlan::default()
+            }
+        );
+        assert_eq!(
+            plan_doc(Some(&link), true, "Renamed", "parent-b", "hash-b", 20),
+            DocPlan {
+                rename: true,
+                move_page: true,
+                rewrite_body: true,
+                ..DocPlan::default()
+            }
+        );
+    }
+
+    #[test]
+    fn document_plan_recreates_incomplete_or_missing_pages() {
+        let mut link = doc_link("Title", "parent-a", "hash-a");
+        link.ok = false;
+        assert!(plan_doc(Some(&link), true, "Title", "parent-a", "hash-a", 10).create);
+        assert!(plan_doc(Some(&link), false, "Title", "parent-a", "hash-a", 10).create);
+    }
+
+    #[test]
+    fn document_plan_backfills_legacy_links() {
+        let mut link = doc_link("", "", "");
+        link.doc_updated_at = 10;
+        assert_eq!(
+            plan_doc(Some(&link), true, "Title", "parent-a", "hash-a", 10),
+            DocPlan {
+                baseline: true,
+                ..DocPlan::default()
+            }
+        );
+        assert!(plan_doc(Some(&link), true, "Title", "parent-a", "hash-a", 11).rewrite_body);
+    }
+
+    fn workspace() -> Workspace {
+        let mut completed = Node::new(
+            COMPLETED_ID.to_string(),
+            NodeKind::Folder,
+            "Archived".to_string(),
+            None,
+            1,
+        );
+        completed.builtin = Some(crate::models::Builtin::Completed);
+        let mut trash = Node::new(
+            TRASH_ID.to_string(),
+            NodeKind::Folder,
+            "Trash".to_string(),
+            None,
+            2,
+        );
+        trash.builtin = Some(crate::models::Builtin::Trash);
+        Workspace {
+            version: 1,
+            updated_at: 0,
+            nodes: vec![
+                Node::new(
+                    "d_active".to_string(),
+                    NodeKind::Doc,
+                    "Active".to_string(),
+                    None,
+                    0,
+                ),
+                completed,
+                trash,
+                Node::new(
+                    "d_archived".to_string(),
+                    NodeKind::Doc,
+                    "Archived note".to_string(),
+                    Some(COMPLETED_ID.to_string()),
+                    0,
+                ),
+                Node::new(
+                    "d_trashed".to_string(),
+                    NodeKind::Doc,
+                    "Trashed note".to_string(),
+                    Some(TRASH_ID.to_string()),
+                    0,
+                ),
+            ],
+        }
+    }
+
+    #[test]
+    fn scope_excludes_trash_and_makes_archive_optional() {
+        let ws = workspace();
+        let active: Vec<String> = scope_nodes(&ws, false)
+            .into_iter()
+            .map(|node| node.id)
+            .collect();
+        assert_eq!(active, vec!["d_active"]);
+        assert_eq!(scope_nodes(&ws, true).len(), 3);
+        assert!(scope_nodes(&ws, true)
+            .iter()
+            .any(|node| node.id == "d_archived"));
+        assert!(!scope_nodes(&ws, true)
+            .iter()
+            .any(|node| node.id == "d_trashed"));
+    }
+
+    #[test]
+    fn folder_plans_cover_create_skip_rename_and_move() {
+        let link = FolderLink {
+            page_id: "folder-page".to_string(),
+            parent_page_id: "root".to_string(),
+            title: "Folder".to_string(),
+        };
+        assert!(plan_folder(None, false, "Folder", "root").create);
+        assert_eq!(
+            plan_folder(Some(&link), true, "Folder", "root"),
+            FolderPlan::default()
+        );
+        assert_eq!(
+            plan_folder(Some(&link), true, "Renamed", "root"),
+            FolderPlan {
+                rename: true,
+                ..FolderPlan::default()
+            }
+        );
+        assert_eq!(
+            plan_folder(Some(&link), true, "Folder", "other"),
+            FolderPlan {
+                move_page: true,
+                ..FolderPlan::default()
+            }
+        );
     }
 }

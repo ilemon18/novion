@@ -1043,8 +1043,8 @@
       "type": "bookmark",
       "attrs": {
         "url": "https://www.notion.so",
-        "title": "Notion 双方向同期",
-        "description": "ローカルの変更を Notion へ、Notion の変更も手元へ。"
+        "title": "Notion 一方向同期",
+        "description": "ローカルのノートとフォルダーを Notion へ差分同期します。"
       }
     },
     {
@@ -1052,7 +1052,7 @@
       "content": [
         {
           "type": "text",
-          "text": "設定 → Notion でワークスペースを Notion ページにミラーできます。フォルダーは子ページに、ノートはページになります。変更は双方向に流れ、競合は自動で上書きせず一件ずつ確認します。"
+          "text": "設定 → Notion でこのワークスペースを Notion ページへ送信します。フォルダーは入れ子の子ページに、ノートはページになります。Notion 側だけの変更は無視され、次にローカルが変わったときに対応するページへ送信されます。"
         }
       ]
     },

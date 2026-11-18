@@ -67,7 +67,6 @@ pub fn run() {
             notion::notion_disconnect,
             notion::notion_set_parent,
             notion_sync::notion_sync_docs,
-            notion_sync::notion_resolve_conflicts,
             export::export_doc,
             export::export_workspace,
             export::reveal_path,

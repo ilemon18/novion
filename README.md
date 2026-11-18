@@ -32,7 +32,7 @@ Write offline, no account needed. Plain JSON files you own.
 Keep notes in sync across Macs with iCloud Drive.
 
 ### Notion sync
-One-way or two-way sync, without overwriting conflicts.
+Incremental, one-way pushes from Novion to Notion.
 
 ### Distraction-free
 A clean writing space with light and dark modes and built-in color themes.

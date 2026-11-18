@@ -37,7 +37,7 @@
 | **Workspace ops** | `src-tauri/src/workspace.rs` (workspace.json CRUD, single writer) |
 | **Doc ops** | `src-tauri/src/docs.rs` (read/save document files) |
 | **Asset ops** | `src-tauri/src/assets.rs` (save/delete images) |
-| **Notion sync** | `src-tauri/src/notion.rs` (token, HTTP, errors), `notion_blocks.rs` (TipTap → Notion), `notion_sync.rs` (mirror run) |
+| **Notion sync** | `src-tauri/src/notion.rs` (token, HTTP, errors), `notion_blocks.rs` (TipTap → Notion), `notion_sync.rs` (recursive incremental Novion → Notion push) |
 | **Notion UI** | `src/components/settings/NotionSection.tsx`, `src/store/notion.ts` |
 | **Atomic writes** | `src-tauri/src/atomic.rs` (temp → fsync → rename) |
 | **Error types** | `src-tauri/src/error.rs` (structured {code, message}) |

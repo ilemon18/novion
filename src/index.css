@@ -218,6 +218,105 @@
 }
 
 /*
+ * White is the default palette: a pure-white page with neutral grey chrome.
+ * Its brand, semantic, callout and syntax colours intentionally match Paper.
+ * The dark block redeclares every themed token so no light value can leak.
+ */
+:root[data-palette="white"] {
+  --brand: #4a6fa5;
+  --brand-strong: #3f5f8e;
+  --brand-foreground: #ffffff;
+  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
+
+  --background: #ffffff;
+  --foreground: #202124;
+  --card: #ffffff;
+  --muted: #f5f6f7;
+  --muted-foreground: #646a73;
+  --accent: #eceef1;
+  --accent-foreground: #202124;
+  --popover: #ffffff;
+  --popover-foreground: #202124;
+  --border: #e3e5e8;
+  --input: #d7d9dd;
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #c25a5a;
+  --success: #4a9b74;
+  --warning: #c89b3c;
+  --sidebar: #f5f6f7;
+  --sidebar-hover: #eceef1;
+  --sidebar-active: #e1e4e8;
+
+  --callout-tip: #2f9e5f;
+  --callout-warning: #c98a2b;
+  --callout-danger: #c0392b;
+  --mark-ink: #202124;
+
+  --tok-keyword: #7a56a8;
+  --tok-builtin: #3f6f8e;
+  --tok-string: #4a8a5f;
+  --tok-number: #b06a3b;
+  --tok-literal: #a2593f;
+  --tok-comment: #96968c;
+  --tok-tag: #a0483f;
+  --tok-attr: #8a6a34;
+  --tok-operator: #7a7a72;
+  --tok-meta: #9a9a92;
+  --tok-add: #4a8a5f;
+  --tok-del: #b0605a;
+  color-scheme: light;
+}
+
+:root[data-palette="white"].dark {
+  --brand: #6b9bd2;
+  --brand-strong: #5b8ac4;
+  --brand-foreground: #10161f;
+  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
+
+  --background: #16181b;
+  --foreground: #e8eaed;
+  --card: #1d2024;
+  --muted: #202327;
+  --muted-foreground: #9aa0a6;
+  --accent: #23262b;
+  --accent-foreground: #f0f2f4;
+  --popover: #1d2024;
+  --popover-foreground: #e8eaed;
+  --border: #30343a;
+  --input: #3a3f46;
+  --ring: var(--brand);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--brand-foreground);
+  --destructive: #d96b6b;
+  --success: #5db88a;
+  --warning: #d4a843;
+  --sidebar: #111316;
+  --sidebar-hover: #23262b;
+  --sidebar-active: #2b2f35;
+
+  --callout-tip: #4fbf82;
+  --callout-warning: #e0a34a;
+  --callout-danger: #e06c5f;
+  --mark-ink: #1c1f27;
+
+  --tok-keyword: #b79ae0;
+  --tok-builtin: #8bb8d8;
+  --tok-string: #8cc39c;
+  --tok-number: #dfa07a;
+  --tok-literal: #e0a882;
+  --tok-comment: #6f6f6f;
+  --tok-tag: #e09088;
+  --tok-attr: #d3b478;
+  --tok-operator: #8f8f8f;
+  --tok-meta: #7c7c7c;
+  --tok-add: #8cc39c;
+  --tok-del: #d98b85;
+  color-scheme: dark;
+}
+
+/*
  * Palettes. `:root[data-palette=…]` is (0,2,0), so it beats `.dark` (0,1,0)
  * and is therefore the *light* variant; the dark variant adds `.dark` (0,3,0)
  * and must redeclare every token the light block declares, otherwise a light

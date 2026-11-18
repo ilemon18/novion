@@ -26,6 +26,7 @@ const PALETTES: {
   light: [string, string, string];
   dark: [string, string, string];
 }[] = [
+  { id: "white", label: "White", light: ["#ffffff", "#ffffff", "#4a6fa5"], dark: ["#16181b", "#1d2024", "#6b9bd2"] },
   { id: "paper", label: "Paper", light: ["#f7f6f3", "#ffffff", "#4a6fa5"], dark: ["#1a1a1a", "#212121", "#6b9bd2"] },
   { id: "catppuccin", label: "Catppuccin", light: ["#eff1f5", "#ffffff", "#1d64ef"], dark: ["#1e1e2e", "#24273a", "#89b4fa"] },
   { id: "github", label: "GitHub", light: ["#ffffff", "#ffffff", "#0969da"], dark: ["#22272e", "#2d333b", "#539bf5"] },
