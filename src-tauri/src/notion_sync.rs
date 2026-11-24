@@ -424,9 +424,27 @@ async fn remote_page_exists(client: &NotionClient, page_id: &str) -> AppResult<b
     }
 }
 
-/// A run may update existing children, but every new node is created under the
-/// selected target page. Check that page once up front: an archived target is
-/// otherwise reported as one misleading "archived block" failure per new node.
+fn target_archived_error(cfg: &notion::NotionConfig, location: Option<&Value>) -> AppError {
+    let target = if cfg.parent_page_title.trim().is_empty() {
+        cfg.parent_page_id.as_str()
+    } else {
+        cfg.parent_page_title.as_str()
+    };
+    let title = location.map(notion::page_title).unwrap_or_default();
+    let detail = if title.trim().is_empty() {
+        String::new()
+    } else {
+        format!("（回收站中的页面：{title}）")
+    };
+    AppError::new(
+        "notion_target_archived",
+        format!(
+            "Notion 同步目标页「{target}」或其父级在回收站里{detail}。请先在 Notion 里恢复对应页面及父级，或在设置里重新选择同步页面。"
+        ),
+    )
+}
+
+/// Check the target's accessible ancestry before creating any children.
 async fn ensure_sync_target(client: &NotionClient, cfg: &notion::NotionConfig) -> AppResult<()> {
     let fallback = if cfg.parent_page_title.trim().is_empty() {
         cfg.parent_page_id.as_str()
@@ -434,21 +452,12 @@ async fn ensure_sync_target(client: &NotionClient, cfg: &notion::NotionConfig) -
         cfg.parent_page_title.as_str()
     };
     match client.get(&format!("/pages/{}", cfg.parent_page_id)).await {
-        Ok(page) if notion::page_is_archived(&page) => {
-            let fetched = notion::page_title(&page);
-            let title = if fetched.trim().is_empty() {
-                fallback
-            } else {
-                fetched.as_str()
-            };
-            Err(AppError::new(
-                "notion_target_archived",
-                format!(
-                    "Notion 同步目标页「{title}」在回收站里。请先在 Notion 里恢复它，或在设置里重新选择同步页面。"
-                ),
-            ))
+        Ok(page) => {
+            if let Some(location) = client.archived_location(&page).await? {
+                return Err(target_archived_error(cfg, Some(&location)));
+            }
+            Ok(())
         }
-        Ok(_) => Ok(()),
         Err(err) if err.code == "notion_not_found" => Err(AppError::new(
             "notion_target_missing",
             format!(
@@ -565,20 +574,36 @@ impl<'a, R: Runtime> Ctx<'a, R> {
             message: message.into(),
         });
     }
+
+    /// An archived root blocks every new top-level node. Stop the run even if
+    /// the ancestor was inaccessible during preflight or trashed afterwards.
+    fn fail_creation(
+        &mut self,
+        id: &str,
+        title: &str,
+        parent: &str,
+        err: AppError,
+    ) -> AppResult<()> {
+        if err.code == "notion_archived" && parent == self.cfg.parent_page_id {
+            return Err(target_archived_error(&self.cfg, None));
+        }
+        self.fail(id, title, err.message);
+        Ok(())
+    }
 }
 
 async fn sync_folder<R: Runtime>(
     ctx: &mut Ctx<'_, R>,
     folder: &Node,
     notion_parent: &str,
-) -> Option<String> {
+) -> AppResult<Option<String>> {
     let existing = ctx.cfg.folders.get(&folder.id).cloned();
     let remote_exists = if existing.is_some() {
         match remote_page_exists(ctx.client, &existing.as_ref().unwrap().page_id).await {
             Ok(exists) => exists,
             Err(err) => {
                 ctx.fail(&folder.id, &folder.name, err.message);
-                return None;
+                return Ok(None);
             }
         }
     } else {
@@ -597,8 +622,8 @@ async fn sync_folder<R: Runtime>(
         let page_id = match create_page(ctx.client, notion_parent, &folder.name).await {
             Ok(id) => id,
             Err(err) => {
-                ctx.fail(&folder.id, &folder.name, err.message);
-                return None;
+                ctx.fail_creation(&folder.id, &folder.name, notion_parent, err)?;
+                return Ok(None);
             }
         };
         ctx.cfg.folders.insert(
@@ -610,7 +635,7 @@ async fn sync_folder<R: Runtime>(
             },
         );
         ctx.stats.folders_created += 1;
-        return Some(page_id);
+        return Ok(Some(page_id));
     }
 
     let mut link = existing.expect("non-create folder plan has a link");
@@ -638,7 +663,7 @@ async fn sync_folder<R: Runtime>(
         link.parent_page_id = notion_parent.to_string();
     }
     ctx.cfg.folders.insert(folder.id.clone(), link);
-    Some(page_id)
+    Ok(Some(page_id))
 }
 
 async fn prepare_blocks<R: Runtime>(ctx: &mut Ctx<'_, R>, content: &Value) -> Vec<BlockNode> {
@@ -650,20 +675,24 @@ async fn prepare_blocks<R: Runtime>(ctx: &mut Ctx<'_, R>, content: &Value) -> Ve
     blocks
 }
 
-async fn sync_doc<R: Runtime>(ctx: &mut Ctx<'_, R>, node: &Node, notion_parent: &str) {
+async fn sync_doc<R: Runtime>(
+    ctx: &mut Ctx<'_, R>,
+    node: &Node,
+    notion_parent: &str,
+) -> AppResult<()> {
     let title = node.name.clone();
     let file = match ctx.paths.doc_file(&node.id) {
         Ok(file) => file,
         Err(err) => {
             ctx.fail(&node.id, &title, err.message);
-            return;
+            return Ok(());
         }
     };
     let doc = match read_json::<DocFile>(&file).await {
         Ok(doc) => doc,
         Err(err) => {
             ctx.fail(&node.id, &title, err.message);
-            return;
+            return Ok(());
         }
     };
     let effective_title = if title.trim().is_empty() {
@@ -678,7 +707,7 @@ async fn sync_doc<R: Runtime>(ctx: &mut Ctx<'_, R>, node: &Node, notion_parent: 
             Ok(exists) => exists,
             Err(err) => {
                 ctx.fail(&node.id, &effective_title, err.message);
-                return;
+                return Ok(());
             }
         }
     } else {
@@ -700,8 +729,8 @@ async fn sync_doc<R: Runtime>(ctx: &mut Ctx<'_, R>, node: &Node, notion_parent: 
         let page_id = match create_page(ctx.client, notion_parent, &effective_title).await {
             Ok(id) => id,
             Err(err) => {
-                ctx.fail(&node.id, &effective_title, err.message);
-                return;
+                ctx.fail_creation(&node.id, &effective_title, notion_parent, err)?;
+                return Ok(());
             }
         };
         if let Err(err) = append_tree(ctx.client, &page_id, &blocks).await {
@@ -718,7 +747,7 @@ async fn sync_doc<R: Runtime>(ctx: &mut Ctx<'_, R>, node: &Node, notion_parent: 
                 },
             );
             ctx.fail(&node.id, &effective_title, err.message);
-            return;
+            return Ok(());
         }
         ctx.cfg.pages.insert(
             node.id.clone(),
@@ -733,7 +762,7 @@ async fn sync_doc<R: Runtime>(ctx: &mut Ctx<'_, R>, node: &Node, notion_parent: 
             },
         );
         ctx.stats.pages_created += 1;
-        return;
+        return Ok(());
     }
 
     let mut link = existing.expect("non-create document plan has a link");
@@ -801,9 +830,10 @@ async fn sync_doc<R: Runtime>(ctx: &mut Ctx<'_, R>, node: &Node, notion_parent: 
         ctx.stats.pages_skipped += 1;
     }
     ctx.cfg.pages.insert(node.id.clone(), link);
+    Ok(())
 }
 
-async fn sync_tree<R: Runtime>(ctx: &mut Ctx<'_, R>) {
+async fn sync_tree<R: Runtime>(ctx: &mut Ctx<'_, R>) -> AppResult<()> {
     let mut queue: Vec<(String, Option<String>)> = vec![(ctx.cfg.parent_page_id.clone(), None)];
     let mut seen_folders: HashSet<String> = HashSet::new();
 
@@ -812,14 +842,14 @@ async fn sync_tree<R: Runtime>(ctx: &mut Ctx<'_, R>) {
             match node.kind {
                 NodeKind::Folder => {
                     if seen_folders.insert(node.id.clone()) {
-                        if let Some(page_id) = sync_folder(ctx, &node, &notion_parent).await {
+                        if let Some(page_id) = sync_folder(ctx, &node, &notion_parent).await? {
                             queue.push((page_id, Some(node.id.clone())));
                         }
                     }
                     ctx.tick("folders", &node.name);
                 }
                 NodeKind::Doc => {
-                    sync_doc(ctx, &node, &notion_parent).await;
+                    sync_doc(ctx, &node, &notion_parent).await?;
                     ctx.tick("docs", &node.name);
                 }
             }
@@ -838,7 +868,7 @@ async fn sync_tree<R: Runtime>(ctx: &mut Ctx<'_, R>) {
                     .cloned()
                 {
                     if seen_folders.insert(completed.id.clone()) {
-                        if let Some(page_id) = sync_folder(ctx, &completed, &notion_parent).await {
+                        if let Some(page_id) = sync_folder(ctx, &completed, &notion_parent).await? {
                             queue.push((page_id, Some(completed.id.clone())));
                         }
                     }
@@ -847,6 +877,7 @@ async fn sync_tree<R: Runtime>(ctx: &mut Ctx<'_, R>) {
             }
         }
     }
+    Ok(())
 }
 
 // ------------------------------------------------------------------- entry
@@ -902,8 +933,12 @@ pub async fn notion_sync_docs<R: Runtime>(
     let mut ctx = build_ctx(&app, &client, &paths, options).await?;
     ensure_sync_target(&client, &ctx.cfg).await?;
     emit(&app, "folders", 0, ctx.total, "");
-    sync_tree(&mut ctx).await;
-    finish(ctx).await
+    let outcome = sync_tree(&mut ctx).await;
+    // Keep successful mappings even when a later write discovers a blocked
+    // target, so retrying after recovery does not duplicate earlier pages.
+    let stats = finish(ctx).await?;
+    outcome?;
+    Ok(stats)
 }
 
 /// Persists the page mapping and builds final statistics.

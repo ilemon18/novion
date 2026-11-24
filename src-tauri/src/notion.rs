@@ -5,7 +5,7 @@
 //! `Authorization` header. The token and the doc → page mapping live in
 //! `<app config>/notion.json` with `0600` permissions.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -316,6 +316,47 @@ impl NotionClient {
             .await
     }
 
+    /// Check the target and its accessible ancestors. A connection shared on a
+    /// child page need not have access to its parents, so an inaccessible
+    /// ancestor does not by itself make the target unusable.
+    pub async fn archived_location(&self, page: &Value) -> AppResult<Option<Value>> {
+        let mut current = page.clone();
+        let mut seen = HashSet::new();
+        for _ in 0..64 {
+            if page_is_archived(&current) {
+                return Ok(Some(current));
+            }
+            let parent = &current["parent"];
+            let kind = parent["type"].as_str().unwrap_or("");
+            let collection = match kind {
+                "page_id" => "pages",
+                "block_id" => "blocks",
+                "database_id" => "databases",
+                _ => return Ok(None),
+            };
+            let Some(id) = parent[kind].as_str().filter(|id| !id.is_empty()) else {
+                return Ok(None);
+            };
+            if !seen.insert((
+                collection.to_string(),
+                id.replace('-', "").to_ascii_lowercase(),
+            )) {
+                break;
+            }
+            current = match self.get(&format!("/{collection}/{id}")).await {
+                Ok(parent) => parent,
+                Err(err) if err.code == "notion_not_found" || err.code == "notion_forbidden" => {
+                    return Ok(None);
+                }
+                Err(err) => return Err(err),
+            };
+        }
+        Err(AppError::new(
+            "notion_invalid_parent_chain",
+            "无法确认 Notion 目标页的父级状态：页面层级过深或存在循环，请重新选择同步页面",
+        ))
+    }
+
     pub async fn post(&self, path: &str, body: Value) -> AppResult<Value> {
         self.request(
             reqwest::Method::POST,
@@ -441,6 +482,12 @@ fn map_api_error(status: u16, body: &Value, raw: &str) -> AppError {
         404 => AppError::new(
             "notion_not_found",
             "Notion 找不到目标页面或内容：链接里的 id 可能不对，或者该页面没有分享给你的集成",
+        ),
+        400 if code == "validation_error"
+            && (message.contains("Can't edit block that is archived")
+                || message.contains("Can't edit page that is archived")) => AppError::new(
+            "notion_archived",
+            "Notion 页面、区块或其父级在回收站里，无法写入。请在 Notion 里恢复对应页面及父级，或在设置里重新选择同步页面后重试。",
         ),
         400 => AppError::new(
             "notion_validation",
@@ -728,10 +775,10 @@ pub async fn notion_set_parent<R: Runtime>(
             "这是一个数据库，不是页面：请选择普通页面作为同步目标",
         ));
     }
-    if page_is_archived(&page) {
+    if client.archived_location(&page).await?.is_some() {
         return Err(AppError::new(
             "notion_bad_target",
-            "这个页面在回收站里：请先在 Notion 里恢复它，或换一个目标页面",
+            "这个页面或其父级在回收站里：请先在 Notion 里恢复它及父级，或换一个目标页面",
         ));
     }
 
@@ -839,6 +886,8 @@ mod tests {
     fn detects_archived_and_trashed_pages() {
         assert!(page_is_archived(&json!({ "archived": true })));
         assert!(page_is_archived(&json!({ "in_trash": true })));
-        assert!(!page_is_archived(&json!({ "archived": false, "in_trash": false })));
+        assert!(!page_is_archived(
+            &json!({ "archived": false, "in_trash": false })
+        ));
     }
 }
