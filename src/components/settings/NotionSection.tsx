@@ -155,17 +155,21 @@ export function NotionSection() {
         </div>
       ) : (
         <div>
-          <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-            {t("Connect")}
-          </div>
+          <label
+            htmlFor="notion-token-input"
+            className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground"
+          >
+            {t("Integration token")}
+          </label>
           <div className="mt-2 flex gap-2">
             <div className="relative min-w-0 flex-1">
               <Input
+                id="notion-token-input"
                 type={showToken ? "text" : "password"}
                 value={token}
                 spellCheck={false}
                 autoComplete="off"
-                placeholder={t("Paste the integration token (ntn_… or secret_…)")}
+                placeholder="ntn_… / secret_…"
                 onChange={(e) => setToken(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && token.trim() && !connecting) void submitToken();
@@ -204,9 +208,6 @@ export function NotionSection() {
             <Link2 className="size-3.5 shrink-0 text-brand" strokeWidth={1.8} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12.5px] font-medium">{info.parentPageTitle}</div>
-              <div className="truncate font-mono text-[10.5px] text-muted-foreground">
-                {info.parentPageId}
-              </div>
             </div>
             <Button
               size="sm"
@@ -242,7 +243,8 @@ export function NotionSection() {
             value={target}
             spellCheck={false}
             autoComplete="off"
-            placeholder={t("Paste a Notion page link, e.g. https://www.notion.so/xxx-1a2b…")}
+            aria-label={t("Notion page link")}
+            placeholder={t("Notion page link")}
             onChange={(e) => setTarget(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && target.trim() && !settingParent) void submitParent();

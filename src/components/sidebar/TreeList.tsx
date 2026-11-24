@@ -479,11 +479,6 @@ export function TreeList() {
         void move(dragged, null, rootOrder);
       }}
     >
-      {rows.length === 0 && (
-        <div className="px-3 py-6 text-[13.5px] leading-relaxed text-muted-foreground">
-          {t("Click")} <span className="font-medium">+</span> {t("above to create one, or double-click the empty area.")}
-        </div>
-      )}
       {virtual && start > 0 && <div style={{ height: start * ROW_H }} />}
       {slice.map((row) => (
         <TreeRow

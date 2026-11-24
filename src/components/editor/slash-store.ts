@@ -15,7 +15,7 @@ export interface SlashState {
   items: SlashItem[];
   index: number;
   anchor: Anchor;
-  /** header of the popup: "基础块" for `/`, "链接到文档" for `[[` */
+  /** Optional context heading, e.g. the document picker opened with `[[`. */
   label: string;
   show: (
     items: SlashItem[],
@@ -33,7 +33,7 @@ export const useSlash = create<SlashState>((set, get) => ({
   items: [],
   index: 0,
   anchor: { left: 0, top: 0, bottom: 0 },
-  // empty = "basic blocks"; translated where the menu renders it
+  // The block menu needs no heading; document pickers supply their own.
   label: "",
 
   show: (items, anchor, command, label) => {
@@ -50,7 +50,7 @@ export const useSlash = create<SlashState>((set, get) => ({
 
   hide: () => {
     activeCommand = null;
-    set({ open: false, items: [], index: 0, label: "基础块" });
+    set({ open: false, items: [], index: 0, label: "" });
   },
 
   setIndex: (index) => set({ index }),

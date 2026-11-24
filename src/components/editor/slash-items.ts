@@ -190,7 +190,6 @@ export const SLASH_ITEMS: SlashItem[] = [
   {
     id: "doc-link",
     title: "Link to a note",
-    description: "You can also type [[",
     keywords: ["link", "wiki", "reference", "链接", "引用", "关联"],
     icon: Link2,
     run: ({ editor, range }) => {
@@ -201,7 +200,6 @@ export const SLASH_ITEMS: SlashItem[] = [
   {
     id: "mention",
     title: "Mention a note",
-    description: "You can also type @",
     keywords: ["mention", "at", "提及", "引用"],
     icon: AtSign,
     run: ({ editor, range }) => {
@@ -211,7 +209,6 @@ export const SLASH_ITEMS: SlashItem[] = [
   {
     id: "toc",
     title: "Table of contents",
-    description: "Built from the headings in this note",
     keywords: ["toc", "outline", "目录", "大纲", "索引"],
     icon: ListTree,
     run: ({ editor, range }) => {
@@ -221,7 +218,6 @@ export const SLASH_ITEMS: SlashItem[] = [
   {
     id: "bookmark",
     title: "Link card",
-    description: "Save a URL with a title and description",
     keywords: ["bookmark", "embed", "link", "card", "链接", "收藏", "卡片", "嵌入"],
     icon: BookmarkIcon,
     run: ({ editor, range }) => {
@@ -233,7 +229,6 @@ export const SLASH_ITEMS: SlashItem[] = [
   {
     id: "math-inline",
     title: "Inline formula",
-    description: "You can also type $formula$",
     keywords: ["math", "formula", "latex", "公式", "数学"],
     icon: Sigma,
     run: ({ editor, range }) => {
@@ -245,7 +240,6 @@ export const SLASH_ITEMS: SlashItem[] = [
   {
     id: "math-block",
     title: "Formula block",
-    description: "A formula on its own line",
     keywords: ["math", "formula", "latex", "block", "公式", "数学"],
     icon: Sigma,
     run: ({ editor, range }) => {

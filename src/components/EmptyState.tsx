@@ -16,7 +16,7 @@ export function EmptyState({
         <FilePlus className="size-5 text-brand" strokeWidth={1.6} />
       </div>
       <div className="mt-4 text-[14.5px] font-medium tracking-[-0.01em]">
-        {hasDocs ? t("Pick a note to get started") : t("No notes yet")}
+        {hasDocs ? t("Select a note") : t("No notes yet")}
       </div>
       <Button variant="accent" size="sm" className="mt-5" onClick={onCreate}>
         <Plus className="size-3.5" />

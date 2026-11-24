@@ -210,7 +210,7 @@ export function VersionHistoryDialog({ docId, onRestored }: Props) {
             <DialogTitle>{t("Version history")}</DialogTitle>
             <DialogDescription>
               {t(
-                "A snapshot is saved every 5 minutes, keeping up to {limit}. Restoring replaces only the body.",
+                "Snapshots every 5 minutes · Up to {limit} versions",
                 { limit },
               )}
             </DialogDescription>
@@ -241,9 +241,6 @@ export function VersionHistoryDialog({ docId, onRestored }: Props) {
               <div className="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
                 <History className="size-5 text-muted-foreground/50" strokeWidth={1.6} />
                 <p className="text-[12.5px] text-muted-foreground">{t("No versions yet")}</p>
-                <p className="text-[11px] leading-relaxed text-muted-foreground/70">
-                  {t("Keep editing, or click “Save a version”.")}
-                </p>
               </div>
             ) : (
               versions.map((version, index) => {
@@ -318,9 +315,11 @@ export function VersionHistoryDialog({ docId, onRestored }: Props) {
                   {t("Loading…")}
                 </div>
               ) : !body ? (
-                <p className="px-1 py-3 text-[11.5px] text-muted-foreground/70">
-                  {t("Select a version on the left to view it.")}
-                </p>
+                versions && versions.length > 0 ? (
+                  <p className="px-1 py-3 text-[11.5px] text-muted-foreground/70">
+                    {t("Select a version")}
+                  </p>
+                ) : null
               ) : view === "content" ? (
                 <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-[1.65] text-foreground/90">
                   {versionLines.join("\n") || t("(Empty document)")}
@@ -367,10 +366,12 @@ export function VersionHistoryDialog({ docId, onRestored }: Props) {
           <p className="mt-2 text-[11.5px] leading-relaxed text-destructive">{error}</p>
         )}
 
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <p className="text-[11px] leading-relaxed text-muted-foreground/80">
-            {t("The body before restoring is also saved as a snapshot.")}
-          </p>
+        <div className="mt-4 flex items-center justify-end gap-3">
+          {confirming && (
+            <p className="mr-auto text-[11px] leading-relaxed text-muted-foreground/80">
+              {t("Restores only the body. The current body is saved as a version.")}
+            </p>
+          )}
           <div className="flex items-center gap-1.5">
             <Button size="sm" variant="ghost" onClick={close}>
               {t("Close")}

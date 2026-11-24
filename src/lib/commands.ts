@@ -145,7 +145,6 @@ export const COMMANDS: Command[] = [
   {
     id: "workspace.redo",
     title: "Redo",
-    detail: "Redo the change you just undid",
     hint: "⌘⇧Z",
     keywords: ["redo", "重做"],
     group: "doc",
@@ -242,7 +241,6 @@ export const COMMANDS: Command[] = [
   {
     id: "doc.history",
     title: "Version history…",
-    detail: "Browse and restore earlier versions of this note",
     keywords: ["history", "version", "restore", "版本", "历史", "恢复"],
     group: "doc",
     icon: History,
@@ -256,7 +254,6 @@ export const COMMANDS: Command[] = [
   {
     id: "doc.rename",
     title: "Rename…",
-    detail: "Edit the name directly in the sidebar",
     hint: "F2",
     keywords: ["rename", "title", "重命名", "改名"],
     group: "doc",
@@ -530,7 +527,6 @@ export const COMMANDS: Command[] = [
   {
     id: "export.json",
     title: "Export this note as JSON",
-    detail: "Raw TipTap data",
     keywords: ["export", "json", "raw", "导出"],
     group: "export",
     icon: Archive,
@@ -553,7 +549,6 @@ export const COMMANDS: Command[] = [
   {
     id: "export.backup",
     title: "Back up the whole workspace",
-    detail: "Raw JSON copy plus a Markdown mirror",
     keywords: ["backup", "export", "archive", "备份", "导出"],
     group: "export",
     icon: HardDrive,
@@ -586,7 +581,6 @@ export const COMMANDS: Command[] = [
   {
     id: "settings.language",
     title: "Language",
-    detail: "English, 简体中文, 繁體中文, 日本語, Español",
     keywords: ["language", "locale", "english", "chinese", "japanese", "spanish", "语言", "多语言"],
     group: "settings",
     icon: Settings,

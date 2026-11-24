@@ -122,7 +122,7 @@ export function AppearanceSection() {
       <div className="mt-6 border-t border-border/70 pt-4">
         <div className="flex items-center justify-between">
           <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-            {t("Font")}
+            {t("App font")}
           </div>
           {docFont !== "system" && (
             <button
@@ -166,10 +166,6 @@ export function AppearanceSection() {
             );
           })}
         </div>
-
-        <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
-          {t("Applies to the whole interface and documents")}
-        </p>
       </div>
 
       <div className="mt-6 border-t border-border/70 pt-4">

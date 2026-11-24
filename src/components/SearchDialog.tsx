@@ -264,7 +264,6 @@ export function SearchDialog() {
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 border-b border-border/70 px-3.5 py-1.5">
-          <span className="mr-0.5 text-[10.5px] text-muted-foreground/60">{t("Filter")}</span>
           <FilterChip
             active={folderOnly}
             disabled={!selectedId}
@@ -344,16 +343,10 @@ export function SearchDialog() {
           ))}
         </div>
 
-        <div className="flex items-center gap-3 border-t border-border/70 px-3.5 py-1.5 text-[10.5px] text-muted-foreground/70">
-          <span>↑↓ {t("Select")}</span>
-          <span>↵ {t("Open")}</span>
-          <span className="ml-auto flex items-center gap-2">
-            <span className="hidden sm:inline">
-              {t("Try")} <code className="font-mono">path:folder</code>,{" "}
-              <code className="font-mono">title:heading</code>,{" "}
-              <code className="font-mono">updated:&gt;7d</code>
-            </span>
-          </span>
+        <div className="hidden border-t border-border/70 px-3.5 py-1.5 text-[10.5px] text-muted-foreground/70 sm:block">
+          {t("Try")} <code className="font-mono">path:folder</code>,{" "}
+          <code className="font-mono">title:heading</code>,{" "}
+          <code className="font-mono">updated:&gt;7d</code>
         </div>
       </DialogContent>
     </Dialog>

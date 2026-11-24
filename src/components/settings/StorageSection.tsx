@@ -352,8 +352,7 @@ export function StorageSection() {
             strokeWidth={1.8}
           />
           <div className="min-w-0 flex-1">
-            <div className="text-[12.5px] font-medium">{t("Export and backup")}</div>
-            <div className="mt-2 flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant="outline"

@@ -40,9 +40,11 @@ export function SlashMenu() {
       style={{ left, top, width: MENU_W }}
       onMouseDown={(e) => e.preventDefault()}
     >
-      <div className="truncate border-b border-border/70 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground">
-        {label || t("Basic blocks")}
-      </div>
+      {label && (
+        <div className="truncate border-b border-border/70 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground">
+          {label}
+        </div>
+      )}
       <div ref={listRef} className="max-h-[248px] overflow-y-auto p-1">
         {items.length === 0 && (
           <div className="px-2 py-3 text-center text-[12.5px] text-muted-foreground">
@@ -77,11 +79,6 @@ export function SlashMenu() {
             </button>
           );
         })}
-      </div>
-      <div className="flex items-center gap-2 border-t border-border/70 px-2.5 py-1 text-[10.5px] text-muted-foreground">
-        <span>↑↓ {t("Select")}</span>
-        <span>↵ {t("Confirm")}</span>
-        <span>esc {t("Close")}</span>
       </div>
     </div>
   );

@@ -16,11 +16,11 @@ const LIMIT_MIN = 5;
 const LIMIT_MAX = 20;
 const LIMIT_DEFAULT = 10;
 
-const FEATURES: { key: keyof FeatureFlags; label: string; hint: string; icon: LucideIcon }[] = [
-  { key: "outline", label: "Outline and contents", hint: "The right-hand outline and the “Table of contents” block", icon: ListTree },
-  { key: "history", label: "Version history", hint: "Automatic snapshots and restore", icon: History },
-  { key: "bubbleMenu", label: "Formatting toolbar", hint: "Appears when you select text", icon: Baseline },
-  { key: "richBlocks", label: "Maths and image controls", hint: "KaTeX rendering, image resizing", icon: Sigma },
+const FEATURES: { key: keyof FeatureFlags; label: string; icon: LucideIcon }[] = [
+  { key: "outline", label: "Outline and contents", icon: ListTree },
+  { key: "history", label: "Version history", icon: History },
+  { key: "bubbleMenu", label: "Formatting toolbar", icon: Baseline },
+  { key: "richBlocks", label: "Maths and image controls", icon: Sigma },
 ];
 
 export function EditorSection() {
@@ -64,18 +64,12 @@ export function EditorSection() {
 
   return (
     <div>
-      <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-        {t("Features")}
-      </div>
-      <div className="mt-2 divide-y divide-border/70 rounded-lg border border-border/70">
+      <div className="divide-y divide-border/70 rounded-lg border border-border/70">
         {FEATURES.map((item) => (
           <div key={item.key} className="flex items-center gap-2.5 px-3 py-2.5">
             <item.icon className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.7} />
-            <div className="min-w-0 flex-1">
-              <div className="text-[12.5px] font-medium leading-tight">{t(item.label)}</div>
-              <div className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
-                {t(item.hint)}
-              </div>
+            <div className="min-w-0 flex-1 text-[12.5px] font-medium leading-tight">
+              {t(item.label)}
             </div>
             <Switch
               checked={features[item.key]}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CornerDownLeft, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
@@ -157,15 +157,6 @@ export function CommandPalette() {
               })}
             </div>
           ))}
-        </div>
-
-        <div className="flex items-center gap-3 border-t border-border/70 px-3 py-1 text-[10.5px] text-muted-foreground">
-          <span>↑↓ {t("Select")}</span>
-          <span className="flex items-center gap-1">
-            <CornerDownLeft className="size-2.5" />
-            {t("Run")}
-          </span>
-          <span>esc {t("Close")}</span>
         </div>
       </DialogContent>
     </Dialog>

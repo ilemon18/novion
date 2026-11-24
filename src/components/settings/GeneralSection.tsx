@@ -35,18 +35,11 @@ export function GeneralSection() {
               )}
             >
               <span className="min-w-0 flex-1 truncate">{LOCALE_LABELS[option]}</span>
-              <span className="shrink-0 font-mono text-[10.5px] uppercase text-muted-foreground">
-                {option}
-              </span>
               {active && <Check className="size-3.5 shrink-0 text-brand" />}
             </button>
           );
         })}
       </div>
-
-      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-        {t("The interface switches immediately. Your notes are never translated.")}
-      </p>
     </div>
   );
 }

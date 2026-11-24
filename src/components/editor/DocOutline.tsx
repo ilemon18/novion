@@ -219,7 +219,7 @@ export function DocOutline({ items, editor, scrollRef, onClose }: Props) {
       <div className="scroller min-h-0 flex-1 overflow-y-auto px-1.5 pb-8">
         {items.length === 0 ? (
           <p className="px-2 py-3 text-[11.5px] leading-relaxed text-muted-foreground/80">
-            {t("Use")} <kbd>/</kbd> {t("to add a heading — it shows up here.")}
+            {t("No headings")}
           </p>
         ) : (
           renderNodes(tree, 0)

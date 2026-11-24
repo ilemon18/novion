@@ -287,8 +287,8 @@ export function DocEditor({
               .catch((err) => onErrorRef.current?.(errorMessage(err)));
             return true;
           },
-          // list items are copied without their paragraph wrapper so other
-          // editors do not add a blank line between every item
+          // Copy and cut use single block newlines in plain text and tighten
+          // HTML paragraph spacing so pasted content has no extra blank lines.
           copy: (view, event) =>
             copySelection(view, event as ClipboardEvent, false),
           cut: (view, event) => copySelection(view, event as ClipboardEvent, true),

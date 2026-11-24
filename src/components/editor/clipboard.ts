@@ -14,14 +14,16 @@ import type { EditorView } from "@tiptap/pm/view";
  * hard break, the way those editors write it themselves) makes the spacing
  * travel with the text instead of depending on CSS we cannot ship. The rule
  * covers `<ul>`, `<ol>`, task lists and nested lists identically, so copy and
- * cut behave the same everywhere in the document.
+ * cut behave the same everywhere in the document. Remaining paragraphs get
+ * zero margins and padding inline to avoid default paragraph gaps elsewhere.
  *
  * The `text/plain` flavour needs its own pass: ProseMirror's default is
  * `textBetween(…, "\n\n")`, which separates *every* block with a blank line and
  * has no notion of list markers. Targets that only keep plain text (chat
  * boxes, terminal, some editors' "paste as text") therefore showed a blank
  * line between list items and lost the numbering. `fragmentToText` walks the
- * document model instead and writes the markers itself.
+ * document model instead, separates blocks with a single newline and writes
+ * the markers itself. Explicit empty paragraphs and inline breaks are kept.
  */
 
 const LIST_NODES = new Set(["bulletList", "orderedList", "taskList"]);
@@ -160,9 +162,9 @@ function tableLines(table: PMNode, indent: string, out: string[]): void {
 /**
  * Plain text for a copied slice.
  *
- * Top-level blocks are separated by one blank line (readable paragraphs); list
- * items stay on consecutive lines so a list travels as a list, not as a stack
- * of one-line paragraphs.
+ * Top-level blocks are separated by a single newline. Empty paragraphs and
+ * breaks inside a block contribute their own newlines, preserving intentional
+ * blank lines without adding any between adjacent paragraphs or lists.
  */
 export function fragmentToText(fragment: Fragment): string {
   const blocks: string[] = [];
@@ -173,19 +175,18 @@ export function fragmentToText(fragment: Fragment): string {
     // stray blank line behind: only blocks that produced something are joined
     if (lines.length) blocks.push(lines.join("\n"));
   });
-  return blocks.join("\n\n");
+  return blocks.join("\n");
 }
 
 /**
  * Flattens paragraphs inside every list item.
  *
  * `li > p > (inline)` becomes `li > (inline)`; a following `p` starts with a
- * `<br>` so multi-paragraph items keep their line breaks. Anything still
- * wrapped in a paragraph afterwards (task list items nest their text in a
- * `div`) gets an explicit zero margin, which is the portable way to say
- * "no gap" when the target reads inline styles instead of the element.
+ * `<br>` so multi-paragraph items keep their line breaks. All remaining
+ * paragraphs, including those outside lists, get zero margins and padding
+ * without replacing any other inline styles.
  */
-function tightenListItems(root: ParentNode): void {
+function tightenClipboardHtml(root: ParentNode): void {
   for (const item of Array.from(root.querySelectorAll("li"))) {
     const paragraphs = Array.from(item.children).filter(
       (child): child is HTMLElement => child.tagName === "P",
@@ -198,8 +199,10 @@ function tightenListItems(root: ParentNode): void {
     });
   }
 
-  for (const paragraph of Array.from(root.querySelectorAll("li p"))) {
-    paragraph.setAttribute("style", "margin:0;padding:0");
+  const paragraphs = root.querySelectorAll<HTMLParagraphElement>("p");
+  for (const paragraph of Array.from(paragraphs)) {
+    paragraph.style.margin = "0";
+    paragraph.style.padding = "0";
   }
 }
 
@@ -210,7 +213,7 @@ function tightenListItems(root: ParentNode): void {
  *
  * `view.serializeForClipboard` is ProseMirror's own serializer, so the
  * `data-pm-slice` marker that gives in-app paste its fidelity is preserved —
- * only the paragraph wrappers inside list items are rewritten.
+ * list paragraph wrappers and paragraph spacing are adjusted in the copy.
  */
 export function copySelection(
   view: EditorView,
@@ -226,7 +229,7 @@ export function copySelection(
 
   const slice = selection.content();
   const { dom } = view.serializeForClipboard(slice);
-  tightenListItems(dom);
+  tightenClipboardHtml(dom);
 
   event.preventDefault();
   data.clearData();

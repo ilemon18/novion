@@ -50,7 +50,7 @@ export function docLinkItems(query: string): SlashItem[] {
     rows.push({
       id: `link-${docId}`,
       title: name,
-      description: crumbs.length ? crumbs.join(" / ") : t("Link to this document"),
+      description: crumbs.length ? crumbs.join(" / ") : undefined,
       keywords: [name],
       icon: FileText,
       run: ({ editor, range }: { editor: Editor; range: Range }) => {
