@@ -126,6 +126,14 @@ export interface NotionState {
   lastSyncAt: number;
 }
 
+export interface McpStatus {
+  running: boolean;
+  host: string;
+  port: number;
+  endpoint: string;
+  token: string;
+}
+
 export interface NotionConnection {
   state: NotionState;
   workspaceName: string;
@@ -336,6 +344,11 @@ export const api = {
   getHistoryEnabled: () => invoke<boolean>("get_history_enabled"),
   setHistoryEnabled: (enabled: boolean) =>
     invoke<boolean>("set_history_enabled", { enabled }),
+  mcpGetStatus: () => invoke<McpStatus>("mcp_get_status"),
+  mcpSetPort: (port: number) => invoke<McpStatus>("mcp_set_port", { port }),
+  mcpRotateToken: () => invoke<McpStatus>("mcp_rotate_token"),
+  mcpStart: () => invoke<McpStatus>("mcp_start"),
+  mcpStop: () => invoke<McpStatus>("mcp_stop"),
   /** Hands an external link to the system browser (never navigates the webview). */
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   notionGetState: () => invoke<NotionState>("notion_get_state"),

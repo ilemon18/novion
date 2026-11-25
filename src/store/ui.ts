@@ -7,6 +7,7 @@ export type SettingsSection =
   | "editor"
   | "appearance"
   | "storage"
+  | "mcp"
   | "notion"
   | "about";
 
@@ -196,6 +197,7 @@ function readSettingsSection(): SettingsSection {
     v === "editor" ||
     v === "appearance" ||
     v === "storage" ||
+    v === "mcp" ||
     v === "notion" ||
     v === "about"
     ? v

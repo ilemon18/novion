@@ -8,6 +8,7 @@ mod export;
 mod history;
 mod import;
 mod markdown;
+mod mcp;
 mod models;
 mod notion;
 mod notion_blocks;
@@ -83,6 +84,11 @@ pub fn run() {
             config::set_history_limit,
             config::get_history_enabled,
             config::set_history_enabled,
+            mcp::mcp_get_status,
+            mcp::mcp_set_port,
+            mcp::mcp_rotate_token,
+            mcp::mcp_start,
+            mcp::mcp_stop,
             update::update_check,
             update::update_download,
             update::update_install,
@@ -95,6 +101,7 @@ pub fn run() {
             let notion = notion::load(app.handle());
             app.manage(notion::NotionState(Mutex::new(notion)));
             app.manage(update::UpdateState::default());
+            app.manage(mcp::McpState::default());
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();

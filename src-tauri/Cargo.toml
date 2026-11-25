@@ -4,7 +4,7 @@ version = "0.0.1"
 description = "Novion — local-first knowledge notes"
 authors = ["Novion"]
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.88"
 
 [lib]
 name = "novion_lib"
@@ -21,9 +21,20 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["fs", "io-util", "rt", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+# MCP Streamable HTTP transport; the server is bound to loopback only.
+axum = "0.8"
+rmcp = { version = "3.11", default-features = false, features = [
+    "macros",
+    "server",
+    "transport-streamable-http-server",
+] }
+schemars = "1"
+subtle = "2"
+url = "2"
 # Integrity check for downloaded update bundles (the digest comes from the
 # release manifest; see src/update.rs). Already in the tree via reqwest.
 sha2 = "0.10"

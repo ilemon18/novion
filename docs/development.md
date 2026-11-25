@@ -9,7 +9,7 @@ pnpm install
 pnpm app:dev
 ```
 
-Requirements: macOS 11+ / Windows 10+, Node.js 20+, pnpm, Rust 1.77+. macOS also needs the Xcode Command Line Tools; Windows needs WebView2 (the installer adds it).
+Requirements: macOS 11+ / Windows 10+, Node.js 20+, pnpm, Rust 1.88+. macOS also needs the Xcode Command Line Tools; Windows needs WebView2 (the installer adds it).
 
 ## Local builds
 

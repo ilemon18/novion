@@ -34,6 +34,14 @@ pub struct Config {
     /// when false, saves stop writing snapshots (existing ones are kept)
     #[serde(default = "default_true")]
     pub history_enabled: bool,
+    /// Port used by the optional local MCP server. The listener itself never
+    /// starts automatically, even when a port has been saved here.
+    #[serde(default = "default_mcp_port")]
+    pub mcp_port: u16,
+    /// Local MCP bearer token. An empty token is initialized on first visit to
+    /// MCP settings and then persisted so client configuration remains stable.
+    #[serde(default)]
+    pub mcp_token: String,
 }
 
 fn default_true() -> bool {
@@ -42,6 +50,13 @@ fn default_true() -> bool {
 
 fn default_version() -> u32 {
     1
+}
+
+pub const MCP_PORT_DEFAULT: u16 = 39_261;
+pub const MCP_PORT_MIN: u16 = 1_024;
+
+fn default_mcp_port() -> u16 {
+    MCP_PORT_DEFAULT
 }
 
 /// Ten snapshots (~50 minutes of editing back then) is what a notes app needs;
@@ -66,6 +81,8 @@ impl Default for Config {
             storage: Storage::Local,
             history_limit: HISTORY_LIMIT_DEFAULT,
             history_enabled: true,
+            mcp_port: MCP_PORT_DEFAULT,
+            mcp_token: String::new(),
         }
     }
 }
@@ -89,7 +106,11 @@ pub fn load<R: Runtime>(app: &AppHandle<R>) -> Config {
     let Ok(bytes) = std::fs::read(&file) else {
         return Config::default();
     };
-    serde_json::from_slice::<Config>(&bytes).unwrap_or_default()
+    let mut config = serde_json::from_slice::<Config>(&bytes).unwrap_or_default();
+    if config.mcp_port < MCP_PORT_MIN {
+        config.mcp_port = MCP_PORT_DEFAULT;
+    }
+    config
 }
 
 pub fn current<R: Runtime>(app: &AppHandle<R>) -> Storage {
@@ -151,6 +172,33 @@ pub fn set<R: Runtime>(app: &AppHandle<R>, storage: Storage) -> AppResult<Config
     update(app, |cfg| cfg.storage = storage)
 }
 
+/// Ensure a bearer credential exists before it is shown to the user or the
+/// HTTP service is started. Existing config files gain this field lazily.
+pub fn ensure_mcp_token<R: Runtime>(app: &AppHandle<R>) -> AppResult<Config> {
+    let current = app
+        .try_state::<ConfigState>()
+        .and_then(|state| state.0.lock().ok().map(|guard| guard.clone()))
+        .unwrap_or_else(|| load(app));
+    if !current.mcp_token.is_empty() {
+        return Ok(current);
+    }
+    update(app, |cfg| cfg.mcp_token = uuid::Uuid::new_v4().to_string())
+}
+
+pub fn set_mcp_port<R: Runtime>(app: &AppHandle<R>, port: u16) -> AppResult<Config> {
+    if !(MCP_PORT_MIN..=u16::MAX).contains(&port) {
+        return Err(AppError::invalid(format!(
+            "MCP 端口必须在 {MCP_PORT_MIN}–{} 之间",
+            u16::MAX
+        )));
+    }
+    update(app, |cfg| cfg.mcp_port = port)
+}
+
+pub fn rotate_mcp_token<R: Runtime>(app: &AppHandle<R>) -> AppResult<Config> {
+    update(app, |cfg| cfg.mcp_token = uuid::Uuid::new_v4().to_string())
+}
+
 #[tauri::command]
 pub fn get_history_limit<R: Runtime>(app: AppHandle<R>) -> usize {
     history_limit(&app)
@@ -195,6 +243,8 @@ mod tests {
                 .expect("old config must still parse");
         assert!(cfg.history_enabled);
         assert_eq!(cfg.history_limit, 10);
+        assert_eq!(cfg.mcp_port, MCP_PORT_DEFAULT);
+        assert!(cfg.mcp_token.is_empty());
     }
 
     #[test]

@@ -34,6 +34,9 @@ Keep notes in sync across Macs with iCloud Drive.
 ### Notion sync
 Incremental, one-way pushes from Novion to Notion.
 
+### MCP
+Let local AI clients search, read and edit notes through an optional MCP server that listens on your computer only.
+
 ### Distraction-free
 A clean writing space with light and dark modes and built-in color themes.
 

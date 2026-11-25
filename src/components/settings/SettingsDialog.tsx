@@ -2,6 +2,7 @@ import {
   HardDrive,
   Info,
   NotebookPen,
+  Waypoints,
   Settings2,
   SlidersHorizontal,
   Sun,
@@ -18,6 +19,7 @@ import { EditorSection } from "./EditorSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { StorageSection } from "./StorageSection";
 import { NotionSection } from "./NotionSection";
+import { McpSection } from "./McpSection";
 import { AboutSection } from "./AboutSection";
 
 export type SettingsSectionId =
@@ -25,6 +27,7 @@ export type SettingsSectionId =
   | "editor"
   | "appearance"
   | "storage"
+  | "mcp"
   | "notion"
   | "about";
 
@@ -70,6 +73,12 @@ export const SETTINGS_SECTIONS: SectionDef[] = [
     label: "Notion",
     icon: NotebookPen,
     component: NotionSection,
+  },
+  {
+    id: "mcp",
+    label: "MCP",
+    icon: Waypoints,
+    component: McpSection,
   },
   {
     id: "about",
