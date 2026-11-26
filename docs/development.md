@@ -79,9 +79,69 @@ If the certificate itself is unusable (not a readable `.p12`, wrong password, or
 
 To export it: Keychain Access -> My Certificates -> Developer ID Application -> Export as `.p12`, then `base64 -i cert.p12 | pbcopy` into `APPLE_CERTIFICATE`.
 
-## LAN sharing
+## MCP development
 
-The optional Sharing settings page starts a TLS server on the LAN, advertises it over mDNS (`_novion._tcp.local.`), and lets a paired client run workspace commands on the host. See [sharing.md](sharing.md). macOS needs the Local Network usage description and Bonjour service declaration in `src-tauri/Info.plist`; Windows asks for a private-network firewall exception the first time sharing starts.
+The optional MCP server is implemented in `src-tauri/src/mcp.rs`; its settings
+UI is `src/components/settings/McpSection.tsx`. It uses `rmcp` Streamable HTTP
+with tools only, binds to `127.0.0.1`, and defaults to port `39261`. The port and
+bearer token are stored in the application config as `mcpPort` and `mcpToken`.
+
+The server never starts with the app. `mcp_get_status` is also what creates the
+first token, and `mcp_set_port` / `mcp_rotate_token` only work while the server
+is stopped.
+
+Run the MCP unit tests:
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml mcp::tests
+```
+
+Manual check: run `pnpm app:dev`, open **Settings → MCP**, start the server, and
+confirm that a request without the bearer token gets `401`. Copy the connection
+details into an MCP client and verify `initialize` plus `tools/list` succeed.
+
+## LAN sharing development
+
+The optional Sharing settings page starts a TLS server on the LAN, advertises it
+over mDNS (`_novion._tcp.local.`), and lets a paired client run workspace
+commands on the host. See [sharing.md](sharing.md).
+
+Backend modules:
+
+| Module | Responsibility |
+| --- | --- |
+| `src-tauri/src/remote/store.rs` | Sharing/client config, token hashes, local CA and server certificate |
+| `src-tauri/src/remote/server.rs` | HTTPS routes and the RPC dispatch allowlist |
+| `src-tauri/src/remote/client.rs` | Pairing, hello, pinned TLS client, RPC calls |
+| `src-tauri/src/remote/discovery.rs` | mDNS advertising and scanning |
+| `src-tauri/src/remote/asset_proxy.rs` | Loopback image proxy on the client |
+| `src-tauri/src/remote/mod.rs` | Commands, session state, pairing lifecycle, server task |
+
+Frontend state and UI are in `src/store/remote.ts` and
+`src/components/settings/SharingSection.tsx`. In remote mode,
+`src/lib/tauri.ts` routes workspace operations through `remote_call`; local-only
+wrappers reject with `remote_unsupported`.
+
+Defaults are port `39262` and protocol version `1`. Run the sharing unit tests:
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml remote::
+```
+
+Two-machine smoke test:
+
+1. Start sharing on the host and connect with **Scan**.
+2. Repeat with **Connect by address instead**.
+3. Disconnect, reconnect from the saved entry, and check the latency badge.
+4. Revoke the client on the host and confirm its next request is rejected.
+5. While connected, confirm export, storage switching, Notion, and MCP settings
+   are blocked.
+6. Stop sharing and confirm the client loses access immediately.
+
+macOS needs the Local Network usage description and Bonjour service declaration
+in `src-tauri/Info.plist`; Windows asks for a private-network firewall exception
+the first time sharing starts. Identity and config files live in the application
+config directory (`sharing.json`, `remote.json`, and `remote-identity/`).
 
 ## Tests
 

@@ -39,7 +39,8 @@
 | **Asset ops** | `src-tauri/src/assets.rs` (save/delete images) |
 | **Notion sync** | `src-tauri/src/notion.rs` (token, HTTP, errors), `notion_blocks.rs` (TipTap → Notion), `notion_sync.rs` (recursive incremental Novion → Notion push) |
 | **Notion UI** | `src/components/settings/NotionSection.tsx`, `src/store/notion.ts` |
-| **LAN sharing** | `src-tauri/src/remote/` (TLS server, pairing, mDNS, client, asset proxy), `src/store/remote.ts`, `src/components/settings/SharingSection.tsx` |
+| **MCP server** | `src-tauri/src/mcp.rs` (9 tools, Streamable HTTP, bearer auth), `src-tauri/src/config.rs` (`mcpPort` / `mcpToken`), `src/components/settings/McpSection.tsx`, `src/lib/tauri.ts` |
+| **LAN sharing** | `src-tauri/src/remote/` — `mod.rs` (commands, session, pairing lifecycle), `store.rs` (config, token hashes, CA/cert), `server.rs` (HTTPS routes, RPC dispatch), `client.rs` (pair/hello/pinned RPC), `discovery.rs` (mDNS), `asset_proxy.rs` (client image proxy); `src/store/remote.ts`, `src/components/settings/SharingSection.tsx`, `src/lib/tauri.ts` |
 | **Atomic writes** | `src-tauri/src/atomic.rs` (temp → fsync → rename) |
 | **Error types** | `src-tauri/src/error.rs` (structured {code, message}) |
 
@@ -113,6 +114,18 @@ export async function myCommand(param: string): Promise<Data> {
 - **workspace.json**: Single source of truth, atomic rewrites only
 - **Document files**: Must match workspace nodes, use atomic writes
 - **Path traversal**: All paths validated in `paths.rs`, never trust input
+
+### MCP
+- **Loopback only**: binds to `127.0.0.1`; never starts with the app
+- **Tools only**: 9 note tools; no resources, prompts, folder mutations, permanent delete, history, or asset upload
+- **Revisions**: `get_note` returns an opaque `revision`; `update_note` requires `expected_revision` and replaces the full body
+- **Remote lock**: MCP settings are blocked while connected to a shared workspace
+
+### Remote workspace
+- **Routing**: `workspaceInvoke` in `src/lib/tauri.ts` sends workspace commands through `remote_call`; local-only wrappers reject with `remote_unsupported`
+- **Blocked remotely**: permanent delete/empty Trash, storage, Notion, MCP, import/export/reveal, updates, sharing config
+- **Config files**: host `sharing.json` + `remote-identity/`; client `remote.json`; app config directory, private permissions on macOS/Linux
+- **Conflicts**: tree mutations are serialized on the host; document bodies still use the mtime conflict check. Not real-time co-editing.
 
 ### macOS
 - **Path**: `~/Documents/Novion` is standard, created on first run
@@ -220,4 +233,4 @@ replaced by a release bundle. The UI has exactly these states and one button eac
 
 ---
 
-**Last updated**: 2025-01-15
+**Last updated**: 2026-11-26
