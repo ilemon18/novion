@@ -296,7 +296,13 @@ export function BuiltinSections() {
                               size="iconSm"
                               variant="ghost"
                               onClick={(e) => e.stopPropagation()}
-                              className="opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
+                              className={cn(
+                                "absolute right-1 top-1/2 z-10 -translate-y-1/2",
+                                "pointer-events-none opacity-0 transition-opacity duration-100",
+                                "group-hover:pointer-events-auto group-hover:opacity-100",
+                                "focus-visible:pointer-events-auto focus-visible:opacity-100",
+                                "data-[state=open]:pointer-events-auto data-[state=open]:opacity-100",
+                              )}
                               aria-label={t("Item actions")}
                             >
                               <MoreHorizontal className="size-3.5" />
