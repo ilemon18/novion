@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
+use tokio::sync::{Mutex as TokioMutex, OwnedMutexGuard};
 
 use tauri::{AppHandle, Runtime};
 
@@ -98,6 +99,30 @@ struct Snapshot {
 /// Read-only commands (`search`, `backlinks`, export, Notion) all need the tree.
 /// Re-parsing it per call made a search keystroke decode the whole workspace;
 /// this hands out an `Arc` while the file is unchanged.
+/// One async write lock per workspace root. Remote clients and the local UI
+/// can issue tree mutations concurrently; without this, two load-modify-save
+/// cycles would overwrite each other's nodes.
+static WRITE_LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<TokioMutex<()>>>>> = OnceLock::new();
+
+fn write_locks() -> &'static Mutex<HashMap<PathBuf, Arc<TokioMutex<()>>>> {
+    WRITE_LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub(crate) async fn write_guard(paths: &Paths) -> OwnedMutexGuard<()> {
+    let lock = write_locks()
+        .lock()
+        .ok()
+        .and_then(|mut map| {
+            map.get(&paths.root).cloned().or_else(|| {
+                let lock = Arc::new(TokioMutex::new(()));
+                map.insert(paths.root.clone(), lock.clone());
+                Some(lock)
+            })
+        })
+        .unwrap_or_else(|| Arc::new(TokioMutex::new(())));
+    lock.lock_owned().await
+}
+
 static SNAPSHOT: OnceLock<Mutex<HashMap<PathBuf, Snapshot>>> = OnceLock::new();
 
 fn snapshots() -> &'static Mutex<HashMap<PathBuf, Snapshot>> {
@@ -303,6 +328,7 @@ pub async fn ensure_workspace<R: Runtime>(
     language: Option<String>,
 ) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     paths.ensure_dirs().await?;
 
     let file = paths.workspace_file();
@@ -360,6 +386,7 @@ pub async fn create_folder<R: Runtime>(
     name: String,
 ) -> AppResult<CreatedFolder> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
     validate_parent(&ws.nodes, parent_id.as_deref())?;
 
@@ -388,6 +415,7 @@ pub async fn rename_folder<R: Runtime>(
     name: String,
 ) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
     let node = find(&ws.nodes, &id).ok_or_else(|| AppError::not_found("文件夹不存在"))?;
     if node.kind != NodeKind::Folder {
@@ -409,6 +437,7 @@ pub async fn rename_folder<R: Runtime>(
 #[tauri::command]
 pub async fn delete_folder<R: Runtime>(app: AppHandle<R>, id: String) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
     let node = find(&ws.nodes, &id).ok_or_else(|| AppError::not_found("文件夹不存在"))?;
     if node.kind != NodeKind::Folder {
@@ -485,6 +514,7 @@ fn unarchive(ws: &mut Workspace, id: &str) -> AppResult<()> {
 #[tauri::command]
 pub async fn restore_node<R: Runtime>(app: AppHandle<R>, id: String) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
     unarchive(&mut ws, &id)?;
     save(&paths, &ws).await?;
@@ -498,6 +528,7 @@ pub async fn set_completed<R: Runtime>(
     completed: bool,
 ) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
     let node = find(&ws.nodes, &id).ok_or_else(|| AppError::not_found("文档不存在"))?;
     if node.kind != NodeKind::Doc {
@@ -541,6 +572,7 @@ pub async fn set_pinned<R: Runtime>(
     pinned: bool,
 ) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
     let node = find(&ws.nodes, &id).ok_or_else(|| AppError::not_found("文档不存在"))?;
     if node.kind != NodeKind::Doc {
@@ -563,6 +595,7 @@ pub async fn set_pinned<R: Runtime>(
 #[tauri::command]
 pub async fn purge_node<R: Runtime>(app: AppHandle<R>, id: String) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
     let node = find(&ws.nodes, &id).ok_or_else(|| AppError::not_found("节点不存在"))?;
     if node.builtin.is_some() {
@@ -591,6 +624,7 @@ pub async fn purge_node<R: Runtime>(app: AppHandle<R>, id: String) -> AppResult<
 #[tauri::command]
 pub async fn empty_trash<R: Runtime>(app: AppHandle<R>) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
 
     let mut doomed = vec![TRASH_ID.to_string()];
@@ -647,6 +681,7 @@ pub async fn create_doc<R: Runtime>(
     title: String,
 ) -> AppResult<crate::models::CreatedDoc> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
     validate_parent(&ws.nodes, parent_id.as_deref())?;
 
@@ -689,6 +724,7 @@ pub async fn rename_doc<R: Runtime>(
     title: String,
 ) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
     let clean = clean_name(&title, "Untitled");
 
@@ -718,6 +754,7 @@ pub async fn rename_doc<R: Runtime>(
 #[tauri::command]
 pub async fn delete_doc<R: Runtime>(app: AppHandle<R>, id: String) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
     let node = find(&ws.nodes, &id).ok_or_else(|| AppError::not_found("文档不存在"))?;
     if node.kind != NodeKind::Doc {
@@ -736,6 +773,7 @@ pub async fn move_node<R: Runtime>(
     index: i64,
 ) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = load(&paths).await?;
 
     let node = find(&ws.nodes, &id).ok_or_else(|| AppError::not_found("节点不存在"))?;
@@ -799,6 +837,7 @@ pub async fn restore_workspace<R: Runtime>(
     workspace: Workspace,
 ) -> AppResult<Workspace> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = write_guard(&paths).await;
     let mut ws = workspace;
     ensure_builtin(&mut ws);
     ws.version = 1;

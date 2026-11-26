@@ -15,6 +15,7 @@ mod notion_blocks;
 mod notion_sync;
 mod paths;
 mod links;
+mod remote;
 mod search;
 mod storage;
 mod system;
@@ -89,6 +90,21 @@ pub fn run() {
             mcp::mcp_rotate_token,
             mcp::mcp_start,
             mcp::mcp_stop,
+            remote::share_get_status,
+            remote::share_set_port,
+            remote::share_set_device_name,
+            remote::share_start,
+            remote::share_stop,
+            remote::share_new_pairing_code,
+            remote::share_revoke_device,
+            remote::remote_scan,
+            remote::remote_get_state,
+            remote::remote_connect,
+            remote::remote_connect_saved,
+            remote::remote_call,
+            remote::remote_ping,
+            remote::remote_disconnect,
+            remote::remote_forget,
             update::update_check,
             update::update_download,
             update::update_install,
@@ -102,6 +118,7 @@ pub fn run() {
             app.manage(notion::NotionState(Mutex::new(notion)));
             app.manage(update::UpdateState::default());
             app.manage(mcp::McpState::default());
+            app.manage(remote::RemoteState::new(app.handle()));
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();

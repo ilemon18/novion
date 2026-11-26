@@ -256,6 +256,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   init: async () => {
     try {
       set({ busy: true });
+      // A remote session can only exist in this process after the user
+      // connected from Sharing settings. Hydrate it before the first workspace
+      // call so the typed API routes every workspace operation correctly.
+      await api.remoteGetState();
       // no language on purpose: the first-run welcome note is English, not a
       // translation of whatever interface language this profile uses
       const [root, ws] = await Promise.all([api.root(), api.ensure()]);

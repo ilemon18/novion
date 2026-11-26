@@ -322,6 +322,7 @@ pub async fn duplicate_doc<R: Runtime>(
     content: serde_json::Value,
 ) -> AppResult<crate::models::CreatedDoc> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = crate::workspace::write_guard(&paths).await;
     let mut ws = crate::workspace::load(&paths).await?;
 
     let parent_id = ws

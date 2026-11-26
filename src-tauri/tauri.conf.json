@@ -53,7 +53,8 @@
     "shortDescription": "Local-first knowledge notes",
     "longDescription": "Novion is a lightweight, local-first knowledge notes client. Everything is stored as plain JSON files under ~/Documents/Novion.",
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "infoPlist": "Info.plist"
     }
   }
 }

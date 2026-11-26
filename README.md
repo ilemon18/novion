@@ -34,6 +34,9 @@ Keep notes in sync across Macs with iCloud Drive.
 ### Notion sync
 Incremental, one-way pushes from Novion to Notion.
 
+### LAN sharing
+Share a workspace with another Novion on the same network. The host keeps the files; the connected computer edits them directly over a paired, TLS-protected connection. Off by default.
+
 ### MCP
 Let local AI clients search, read and edit notes through an optional MCP server that listens on your computer only.
 

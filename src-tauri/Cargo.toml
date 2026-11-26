@@ -27,6 +27,12 @@ uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 # MCP Streamable HTTP transport; the server is bound to loopback only.
 axum = "0.8"
+# Optional LAN sharing: TLS listener, local CA, mDNS discovery and asset MIME.
+axum-server = { version = "0.9", features = ["tls-rustls-ring"] }
+rcgen = "0.14"
+mdns-sd = "0.22"
+local-ip-address = "0.6"
+mime_guess = "2"
 rmcp = { version = "3.11", default-features = false, features = [
     "macros",
     "server",
@@ -47,6 +53,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "multipart",
     "native-tls",
+    "rustls-tls-manual-roots",
 ] }
 
 [dev-dependencies]

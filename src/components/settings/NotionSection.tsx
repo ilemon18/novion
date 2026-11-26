@@ -18,9 +18,11 @@ import { useNotion } from "@/store/notion";
 import { useUi } from "@/store/ui";
 import { cn } from "@/lib/utils";
 import { formatDateTime, useT } from "@/i18n";
+import { RemoteSettingsBlocked, useRemoteSettingsBlocked } from "./RemoteSettingsBlocked";
 
 export function NotionSection() {
   const t = useT();
+  const remoteBlocked = useRemoteSettingsBlocked();
   const info = useNotion((s) => s.info);
   const loading = useNotion((s) => s.loading);
   const connecting = useNotion((s) => s.connecting);
@@ -47,6 +49,8 @@ export function NotionSection() {
   useEffect(() => {
     if (!info && !loading) void load();
   }, [info, loading, load]);
+
+  if (remoteBlocked) return <RemoteSettingsBlocked />;
 
   if (!info) {
     return (

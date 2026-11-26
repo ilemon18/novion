@@ -4,6 +4,7 @@ import {
   NotebookPen,
   Waypoints,
   Settings2,
+  Share2,
   SlidersHorizontal,
   Sun,
   X,
@@ -20,6 +21,7 @@ import { AppearanceSection } from "./AppearanceSection";
 import { StorageSection } from "./StorageSection";
 import { NotionSection } from "./NotionSection";
 import { McpSection } from "./McpSection";
+import { SharingSection } from "./SharingSection";
 import { AboutSection } from "./AboutSection";
 
 export type SettingsSectionId =
@@ -27,6 +29,7 @@ export type SettingsSectionId =
   | "editor"
   | "appearance"
   | "storage"
+  | "sharing"
   | "mcp"
   | "notion"
   | "about";
@@ -73,6 +76,12 @@ export const SETTINGS_SECTIONS: SectionDef[] = [
     label: "Notion",
     icon: NotebookPen,
     component: NotionSection,
+  },
+  {
+    id: "sharing",
+    label: "Sharing",
+    icon: Share2,
+    component: SharingSection,
   },
   {
     id: "mcp",

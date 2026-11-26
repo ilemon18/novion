@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { relativizeContent } from "./doc-content";
+import { absolutizeContent, relativizeContent } from "./doc-content";
 
 const docWith = (src: string) => ({
   type: "doc",
@@ -39,5 +39,15 @@ describe("relativizeContent", () => {
       "/Users/me/Documents/Novion",
     );
     expect(srcOf(elsewhere)).toBe("asset://localhost/Users/me/other/assets/x.png");
+  });
+
+  it("maps remote workspace assets through the local proxy base", () => {
+    const base = "http://127.0.0.1:32100/s/secret";
+    expect(srcOf(absolutizeContent(docWith("assets/x.png"), base))).toBe(
+      `${base}/assets/x.png`,
+    );
+    expect(srcOf(relativizeContent(docWith(`${base}/assets/x.png`), base))).toBe(
+      "assets/x.png",
+    );
   });
 });

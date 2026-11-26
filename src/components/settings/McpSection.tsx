@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, errorMessage, type McpStatus } from "@/lib/tauri";
 import { useT } from "@/i18n";
+import { RemoteSettingsBlocked, useRemoteSettingsBlocked } from "./RemoteSettingsBlocked";
 import { useUi } from "@/store/ui";
 
 const PORT_MIN = 1024;
@@ -11,6 +12,7 @@ const PORT_MAX = 65535;
 
 export function McpSection() {
   const t = useT();
+  const remoteBlocked = useRemoteSettingsBlocked();
   const notify = useUi((s) => s.notify);
   const [status, setStatus] = useState<McpStatus | null>(null);
   const [port, setPort] = useState(39261);
@@ -69,6 +71,8 @@ export function McpSection() {
       setError(errorMessage(err));
     }
   };
+
+  if (remoteBlocked) return <RemoteSettingsBlocked />;
 
   if (loading && !status) {
     return (

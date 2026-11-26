@@ -57,6 +57,13 @@ function toSlashes(path: string): string {
 /** JSON on disk stores `assets/x.png`; the editor needs an asset:// URL. */
 export function absolutizeContent(content: unknown, root: string): unknown {
   if (!root) return content;
+  if (/^https?:\/\//i.test(root)) {
+    const base = root.replace(/\/+$/, "");
+    return mapImageSrc(content, (src) => {
+      if (!src || REMOTE_RE.test(src)) return src;
+      return `${base}/${src.replace(/^\.?[\\/]/, "")}`;
+    });
+  }
   return mapImageSrc(content, (src) => {
     if (!src || REMOTE_RE.test(src)) return src;
     return convertFileSrc(`${root}/${src.replace(/^\.?[\\/]/, "")}`);
@@ -66,6 +73,12 @@ export function absolutizeContent(content: unknown, root: string): unknown {
 /** Inverse of absolutizeContent so documents stay portable. */
 export function relativizeContent(content: unknown, root: string): unknown {
   if (!root) return content;
+  if (/^https?:\/\//i.test(root)) {
+    const base = root.replace(/\/+$/, "") + "/";
+    return mapImageSrc(content, (src) =>
+      src.startsWith(base) ? src.slice(base.length) : src,
+    );
+  }
   // Root is an OS path (`/Users/me/...` or `C:\Users\me\...`) while the asset
   // URL is percent-encoded and has its own leading slash eaten by the scheme
   // (`asset://localhost/Users/...` captures `Users/...`). Both sides are folded

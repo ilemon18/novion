@@ -34,11 +34,12 @@
 | **Data models** | `src-tauri/src/models.rs` (camelCase serialization) |
 | **Rust commands** | `src-tauri/src/lib.rs` (registration) |
 | **Path logic** | `src-tauri/src/paths.rs` (~/Documents/Novion, id validation, path traversal protection) |
-| **Workspace ops** | `src-tauri/src/workspace.rs` (workspace.json CRUD, single writer) |
+| **Workspace ops** | `src-tauri/src/workspace.rs` (workspace.json CRUD; per-root async write lock for local + remote mutations) |
 | **Doc ops** | `src-tauri/src/docs.rs` (read/save document files) |
 | **Asset ops** | `src-tauri/src/assets.rs` (save/delete images) |
 | **Notion sync** | `src-tauri/src/notion.rs` (token, HTTP, errors), `notion_blocks.rs` (TipTap → Notion), `notion_sync.rs` (recursive incremental Novion → Notion push) |
 | **Notion UI** | `src/components/settings/NotionSection.tsx`, `src/store/notion.ts` |
+| **LAN sharing** | `src-tauri/src/remote/` (TLS server, pairing, mDNS, client, asset proxy), `src/store/remote.ts`, `src/components/settings/SharingSection.tsx` |
 | **Atomic writes** | `src-tauri/src/atomic.rs` (temp → fsync → rename) |
 | **Error types** | `src-tauri/src/error.rs` (structured {code, message}) |
 

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
-import { CheckCircle2, Info, PanelLeft, TriangleAlert, X } from "lucide-react";
+import { CheckCircle2, Info, PanelLeft, TriangleAlert, Wifi, X } from "lucide-react";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/store/workspace";
 import { useStorage } from "@/store/storage";
+import { useRemote } from "@/store/remote";
 import { startUpdateWatcher } from "@/store/update";
 import { importDroppedFiles, isImportableFile } from "@/lib/import-actions";
 import { applyTheme, useUi } from "@/store/ui";
@@ -48,16 +49,25 @@ export default function App() {
   const sidebarOpen = useUi((s) => s.sidebarOpen);
   const toggleSidebar = useUi((s) => s.toggleSidebar);
   const rootPath = useWorkspace((s) => s.rootPath);
+  const remoteStatus = useRemote((s) => s.status);
+  const remoteConnected = !!remoteStatus?.connected;
 
   const booted = useRef(false);
   useEffect(() => {
     if (booted.current) return;
     booted.current = true;
+    void useRemote.getState().load();
     void init();
     // one silent GitHub check per launch: the header button only appears when
     // there really is a newer release
     startUpdateWatcher();
   }, [init]);
+
+  useEffect(() => {
+    if (!remoteConnected) return;
+    const timer = window.setInterval(() => void useRemote.getState().ping(), 10_000);
+    return () => window.clearInterval(timer);
+  }, [remoteConnected]);
 
   useEffect(() => {
     applyTheme(theme, palette);
@@ -194,6 +204,35 @@ export default function App() {
               macOS traffic lights: the overlay title bar puts them at the very
               leading edge, where the button used to end up underneath the native
               close/zoom controls (invisible, and clicking it closed the window). */}
+          {remoteConnected && (
+            <div className="absolute right-3 top-[7px] z-30" data-no-window-drag>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      useUi.getState().setSettingsSection("sharing");
+                      useUi.getState().setSettingsOpen(true);
+                    }}
+                    className={cn(
+                      "flex h-7 max-w-[240px] items-center gap-1.5 rounded-md border px-2 text-[11px]",
+                      remoteStatus?.error
+                        ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                        : "border-brand/30 bg-brand-soft text-brand",
+                    )}
+                  >
+                    <Wifi className="size-3.5 shrink-0" />
+                    <span className="truncate">{remoteStatus?.hostName}</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {remoteStatus?.error
+                    ? t("Remote connection needs attention")
+                    : t("Connected to {name}", { name: remoteStatus?.hostName ?? "" })}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )}
           {!sidebarOpen && (
             <div
               className={cn("absolute top-[7px] z-30", isWindows ? "left-2" : "left-[84px]")}

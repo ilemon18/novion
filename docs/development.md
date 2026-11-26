@@ -79,6 +79,10 @@ If the certificate itself is unusable (not a readable `.p12`, wrong password, or
 
 To export it: Keychain Access -> My Certificates -> Developer ID Application -> Export as `.p12`, then `base64 -i cert.p12 | pbcopy` into `APPLE_CERTIFICATE`.
 
+## LAN sharing
+
+The optional Sharing settings page starts a TLS server on the LAN, advertises it over mDNS (`_novion._tcp.local.`), and lets a paired client run workspace commands on the host. See [sharing.md](sharing.md). macOS needs the Local Network usage description and Bonjour service declaration in `src-tauri/Info.plist`; Windows asks for a private-network firewall exception the first time sharing starts.
+
 ## Tests
 
 ```bash

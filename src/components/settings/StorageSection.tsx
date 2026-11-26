@@ -16,6 +16,7 @@ import { useStorage } from "@/store/storage";
 import { useUi } from "@/store/ui";
 import { cn } from "@/lib/utils";
 import { useT } from "@/i18n";
+import { RemoteSettingsBlocked, useRemoteSettingsBlocked } from "./RemoteSettingsBlocked";
 
 type Phase = "idle" | "confirm" | "running" | "done";
 
@@ -53,6 +54,7 @@ const EMPTY_CHOICES: Choice[] = [
 
 export function StorageSection() {
   const t = useT();
+  const remoteBlocked = useRemoteSettingsBlocked();
   const info = useStorage((s) => s.info);
   const loading = useStorage((s) => s.loading);
   const switching = useStorage((s) => s.switching);
@@ -73,6 +75,8 @@ export function StorageSection() {
   useEffect(() => {
     if (!info && !loading) void load();
   }, [info, loading, load]);
+
+  if (remoteBlocked) return <RemoteSettingsBlocked />;
 
   if (!info) {
     return (

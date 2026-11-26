@@ -91,6 +91,7 @@ pub async fn import_markdown<R: Runtime>(
     parent_id: Option<String>,
 ) -> AppResult<ImportStats> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = crate::workspace::write_guard(&paths).await;
     let root = PathBuf::from(source.trim());
     if !root.exists() {
         return Err(AppError::not_found("导入路径不存在"));
@@ -110,6 +111,7 @@ pub async fn import_markdown_text<R: Runtime>(
     parent_id: Option<String>,
 ) -> AppResult<ImportStats> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = crate::workspace::write_guard(&paths).await;
     let mut ws = crate::workspace::load(&paths).await?;
 
     let title = clean_title(&name);
@@ -143,6 +145,7 @@ pub async fn import_json_text<R: Runtime>(
     parent_id: Option<String>,
 ) -> AppResult<ImportStats> {
     let paths = Paths::new(workspace_root(&app)?);
+    let _guard = crate::workspace::write_guard(&paths).await;
     let mut ws = crate::workspace::load(&paths).await?;
 
     let parsed = parse_json_document(&name, &text);

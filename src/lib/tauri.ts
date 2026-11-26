@@ -126,6 +126,71 @@ export interface NotionState {
   lastSyncAt: number;
 }
 
+
+export type ClientPermission = "readonly" | "readwrite";
+
+export interface PairedDevice {
+  id: string;
+  name: string;
+  permission: ClientPermission;
+  createdAt: number;
+  lastSeenAt: number;
+}
+
+export interface ShareStatus {
+  running: boolean;
+  port: number;
+  addresses: string[];
+  hostId: string;
+  deviceName: string;
+  fingerprint: string;
+  paired: PairedDevice[];
+  pairingCode?: string | null;
+  pairingExpiresAt?: number | null;
+  discoveryError?: string | null;
+}
+
+export interface RemoteHost {
+  hostId: string;
+  hostName: string;
+  address: string;
+  port: number;
+  fingerprint: string;
+  caPem: string;
+  protocol: number;
+  workspaceName: string;
+}
+
+export interface SavedConnection {
+  hostId: string;
+  hostName: string;
+  host: string;
+  port: number;
+  workspaceName: string;
+  fingerprint: string;
+}
+
+export interface RemoteStatus {
+  connected: boolean;
+  hostId?: string | null;
+  hostName?: string | null;
+  workspaceName?: string | null;
+  rootPath?: string | null;
+  assetBase?: string | null;
+  latencyMs?: number | null;
+  protocol?: number | null;
+  error?: string | null;
+  saved?: SavedConnection | null;
+}
+
+export interface RemoteTargetInput {
+  host?: string | null;
+  port?: number | null;
+  code?: string | null;
+  caPem?: string | null;
+  fingerprint?: string | null;
+}
+
 export interface McpStatus {
   running: boolean;
   host: string;
@@ -258,85 +323,129 @@ export interface DocVersionBody {
   content: unknown;
 }
 
+let remoteSession: RemoteStatus | null = null;
+
+function remoteUnsupported() {
+  return Object.assign(new Error(t("This action is unavailable while connected to a remote workspace.")), {
+    code: "remote_unsupported",
+  });
+}
+
+export function setRemoteSession(status: RemoteStatus | null): void {
+  remoteSession = status?.connected ? status : null;
+  rootCache = null;
+}
+
+export function isRemoteSession(): boolean {
+  return remoteSession !== null;
+}
+
+function workspaceInvoke<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
+  if (remoteSession) return invoke<T>("remote_call", { name, args });
+  return invoke<T>(name, args);
+}
+
 /** Thin typed wrapper around the Rust command surface. */
 export const api = {
-  root: () => invoke<string>("get_workspace_root"),
+  root: async () => remoteSession?.rootPath ?? invoke<string>("get_workspace_root"),
   /**
    * `language` only matters on the very first run, where it picks the welcome
    * note. No caller passes one: that note is English for everyone, so the app
    * opens the same way whatever the interface language happens to be.
    */
-  ensure: (language?: string) => invoke<Workspace>("ensure_workspace", { language }),
+  ensure: (language?: string) => workspaceInvoke<Workspace>("ensure_workspace", { language }),
   createFolder: (parentId: string | null, name: string) =>
-    invoke<CreatedFolder>("create_folder", { parentId, name }),
-  renameFolder: (id: string, name: string) => invoke<Workspace>("rename_folder", { id, name }),
-  deleteFolder: (id: string) => invoke<Workspace>("delete_folder", { id }),
+    workspaceInvoke<CreatedFolder>("create_folder", { parentId, name }),
+  renameFolder: (id: string, name: string) => workspaceInvoke<Workspace>("rename_folder", { id, name }),
+  deleteFolder: (id: string) => workspaceInvoke<Workspace>("delete_folder", { id }),
   createDoc: (parentId: string | null, title: string) =>
-    invoke<CreatedDoc>("create_doc", { parentId, title }),
-  renameDoc: (id: string, title: string) => invoke<Workspace>("rename_doc", { id, title }),
-  deleteDoc: (id: string) => invoke<Workspace>("delete_doc", { id }),
+    workspaceInvoke<CreatedDoc>("create_doc", { parentId, title }),
+  renameDoc: (id: string, title: string) => workspaceInvoke<Workspace>("rename_doc", { id, title }),
+  deleteDoc: (id: string) => workspaceInvoke<Workspace>("delete_doc", { id }),
   setCompleted: (id: string, completed: boolean) =>
-    invoke<Workspace>("set_completed", { id, completed }),
-  setPinned: (id: string, pinned: boolean) => invoke<Workspace>("set_pinned", { id, pinned }),
-  restoreNode: (id: string) => invoke<Workspace>("restore_node", { id }),
-  purgeNode: (id: string) => invoke<Workspace>("purge_node", { id }),
-  emptyTrash: () => invoke<Workspace>("empty_trash"),
-  searchDocs: (query: string) => invoke<SearchHit[]>("search_docs", { query }),
+    workspaceInvoke<Workspace>("set_completed", { id, completed }),
+  setPinned: (id: string, pinned: boolean) => workspaceInvoke<Workspace>("set_pinned", { id, pinned }),
+  restoreNode: (id: string) => workspaceInvoke<Workspace>("restore_node", { id }),
+  purgeNode: (id: string) => workspaceInvoke<Workspace>("purge_node", { id }),
+  emptyTrash: () => workspaceInvoke<Workspace>("empty_trash"),
+  searchDocs: (query: string) => workspaceInvoke<SearchHit[]>("search_docs", { query }),
   getStorageState: () => invoke<StorageState>("get_storage_state"),
-  setStorage: (target: StorageKind, mode: SwitchMode) =>
-    invoke<SwitchResult>("set_storage", { target, mode }),
-  revealStorageFolder: () => invoke<void>("reveal_storage_folder"),
+  setStorage: (target: StorageKind, mode: SwitchMode) => {
+    if (remoteSession) return Promise.reject(remoteUnsupported());
+    return invoke<SwitchResult>("set_storage", { target, mode });
+  },
+  revealStorageFolder: () => {
+    if (remoteSession) return Promise.reject(remoteUnsupported());
+    return invoke<void>("reveal_storage_folder");
+  },
   moveNode: (id: string, parentId: string | null, index: number) =>
-    invoke<Workspace>("move_node", { id, parentId, index }),
+    workspaceInvoke<Workspace>("move_node", { id, parentId, index }),
   /** Replaces the tree with a previous snapshot (workspace-level undo/redo). */
   restoreWorkspace: (workspace: Workspace) =>
-    invoke<Workspace>("restore_workspace", { workspace }),
-  readDoc: (id: string) => invoke<DocFile>("read_doc", { id }),
+    workspaceInvoke<Workspace>("restore_workspace", { workspace }),
+  readDoc: (id: string) => workspaceInvoke<DocFile>("read_doc", { id }),
   /**
    * `baseMtimeMs` is the file stamp the editor last saw. The backend refuses the
    * write with `doc_conflict` when the file moved on since then, so an iCloud
    * copy from another Mac is never silently overwritten.
    */
   saveDoc: (id: string, title: string, content: unknown, baseMtimeMs?: number, force?: boolean) =>
-    invoke<SavedDoc>("save_doc", { id, title, content, baseMtimeMs, force }),
+    workspaceInvoke<SavedDoc>("save_doc", { id, title, content, baseMtimeMs, force }),
   duplicateDoc: (sourceId: string, title: string, content: unknown) =>
-    invoke<CreatedDoc>("duplicate_doc", { sourceId, title, content }),
-  docStamp: (id: string) => invoke<DocStamp>("doc_stamp", { id }),
-  workspaceStamp: () => invoke<number>("workspace_stamp"),
-  backlinks: (id: string) => invoke<Backlink[]>("backlinks_doc", { id }),
+    workspaceInvoke<CreatedDoc>("duplicate_doc", { sourceId, title, content }),
+  docStamp: (id: string) => workspaceInvoke<DocStamp>("doc_stamp", { id }),
+  workspaceStamp: () => workspaceInvoke<number>("workspace_stamp"),
+  backlinks: (id: string) => workspaceInvoke<Backlink[]>("backlinks_doc", { id }),
   saveAsset: (nameHint: string, dataBase64: string) =>
-    invoke<AssetRef>("save_asset", { nameHint, dataBase64 }),
-  deleteAsset: (rel: string) => invoke<void>("delete_asset", { rel }),
-  listDir: (rel: string) => invoke<string[]>("list_dir", { rel }),
+    workspaceInvoke<AssetRef>("save_asset", { nameHint, dataBase64 }),
+  deleteAsset: (rel: string) => workspaceInvoke<void>("delete_asset", { rel }),
+  listDir: (rel: string) => workspaceInvoke<string[]>("list_dir", { rel }),
   /** Writes one document as md / html / json into ~/Downloads/Novion. */
-  exportDoc: (id: string, format: ExportFormat) =>
-    invoke<ExportResult>("export_doc", { id, format }),
+  exportDoc: (id: string, format: ExportFormat) => {
+    if (remoteSession) return Promise.reject(remoteUnsupported());
+    return invoke<ExportResult>("export_doc", { id, format });
+  },
   /** Full backup: byte-exact raw copy + a Markdown mirror of the whole tree. */
-  exportWorkspace: () => invoke<ExportResult>("export_workspace"),
+  exportWorkspace: () => {
+    if (remoteSession) return Promise.reject(remoteUnsupported());
+    return invoke<ExportResult>("export_workspace");
+  },
   /** Reveals an exported path in Finder (only under the export/workspace roots). */
-  revealPath: (path: string) => invoke<void>("reveal_path", { path }),
+  revealPath: (path: string) => {
+    if (remoteSession) return Promise.reject(remoteUnsupported());
+    return invoke<void>("reveal_path", { path });
+  },
   /** Native folder picker; `null` when the user cancelled. */
-  pickImportFolder: () => invoke<string | null>("pick_import_folder"),
-  importMarkdown: (source: string, parentId: string | null) =>
-    invoke<ImportStats>("import_markdown", { source, parentId }),
-  importMarkdownText: (name: string, text: string, parentId: string | null) =>
-    invoke<ImportStats>("import_markdown_text", { name, text, parentId }),
+  pickImportFolder: () => {
+    if (remoteSession) return Promise.reject(remoteUnsupported());
+    return invoke<string | null>("pick_import_folder");
+  },
+  importMarkdown: (source: string, parentId: string | null) => {
+    if (remoteSession) return Promise.reject(remoteUnsupported());
+    return invoke<ImportStats>("import_markdown", { source, parentId });
+  },
+  importMarkdownText: (name: string, text: string, parentId: string | null) => {
+    if (remoteSession) return Promise.reject(remoteUnsupported());
+    return invoke<ImportStats>("import_markdown_text", { name, text, parentId });
+  },
   /**
    * A dropped document JSON (as written by {@link exportDoc}). Text that is not a
    * Novion document still becomes one document, with the raw text kept.
    */
-  importJsonText: (name: string, text: string, parentId: string | null) =>
-    invoke<ImportStats>("import_json_text", { name, text, parentId }),
+  importJsonText: (name: string, text: string, parentId: string | null) => {
+    if (remoteSession) return Promise.reject(remoteUnsupported());
+    return invoke<ImportStats>("import_json_text", { name, text, parentId });
+  },
   /** Markdown → TipTap document JSON, for pasting Markdown into a note. */
   parseMarkdownBody: (text: string) =>
     invoke<{ type: string; content?: unknown[] }>("parse_markdown_body", { text }),
-  listDocVersions: (id: string) => invoke<DocVersionMeta[]>("list_doc_versions", { id }),
+  listDocVersions: (id: string) => workspaceInvoke<DocVersionMeta[]>("list_doc_versions", { id }),
   readDocVersion: (id: string, ts: number) =>
-    invoke<DocVersionBody>("read_doc_version", { id, ts }),
+    workspaceInvoke<DocVersionBody>("read_doc_version", { id, ts }),
   /** Writes a snapshot now, ignoring the automatic 5-minute interval. */
-  createDocVersion: (id: string) => invoke<DocVersionMeta>("create_doc_version", { id }),
+  createDocVersion: (id: string) => workspaceInvoke<DocVersionMeta>("create_doc_version", { id }),
   restoreDocVersion: (id: string, ts: number) =>
-    invoke<DocFile>("restore_doc_version", { id, ts }),
+    workspaceInvoke<DocFile>("restore_doc_version", { id, ts }),
   /** How many snapshots a document keeps (10 by default, 5–20 configurable). */
   getHistoryLimit: () => invoke<number>("get_history_limit"),
   setHistoryLimit: (limit: number) => invoke<number>("set_history_limit", { limit }),
@@ -344,6 +453,46 @@ export const api = {
   getHistoryEnabled: () => invoke<boolean>("get_history_enabled"),
   setHistoryEnabled: (enabled: boolean) =>
     invoke<boolean>("set_history_enabled", { enabled }),
+  shareGetStatus: () => invoke<ShareStatus>("share_get_status"),
+  shareSetPort: (port: number) => invoke<ShareStatus>("share_set_port", { port }),
+  shareSetDeviceName: (name: string) =>
+    invoke<ShareStatus>("share_set_device_name", { name }),
+  shareStart: () => invoke<ShareStatus>("share_start"),
+  shareStop: () => invoke<ShareStatus>("share_stop"),
+  shareNewPairingCode: () =>
+    invoke<[string, number]>("share_new_pairing_code"),
+  shareRevokeDevice: (id: string) => invoke<ShareStatus>("share_revoke_device", { id }),
+  remoteScan: () => invoke<RemoteHost[]>("remote_scan"),
+  remoteGetState: async () => {
+    const status = await invoke<RemoteStatus>("remote_get_state");
+    setRemoteSession(status);
+    return status;
+  },
+  remoteConnect: async (target: RemoteTargetInput) => {
+    const status = await invoke<RemoteStatus>("remote_connect", { target });
+    setRemoteSession(status);
+    return status;
+  },
+  remoteConnectSaved: async () => {
+    const status = await invoke<RemoteStatus>("remote_connect_saved");
+    setRemoteSession(status);
+    return status;
+  },
+  remoteDisconnect: async () => {
+    const status = await invoke<RemoteStatus>("remote_disconnect");
+    setRemoteSession(status);
+    return status;
+  },
+  remoteForget: async () => {
+    const status = await invoke<RemoteStatus>("remote_forget");
+    setRemoteSession(status);
+    return status;
+  },
+  remotePing: async () => {
+    const status = await invoke<RemoteStatus>("remote_ping");
+    setRemoteSession(status);
+    return status;
+  },
   mcpGetStatus: () => invoke<McpStatus>("mcp_get_status"),
   mcpSetPort: (port: number) => invoke<McpStatus>("mcp_set_port", { port }),
   mcpRotateToken: () => invoke<McpStatus>("mcp_rotate_token"),
@@ -423,8 +572,15 @@ export async function getRoot(): Promise<string> {
 /** Convert a repo-relative asset path (`assets/x.png`) into a webview-safe URL. */
 export async function assetUrl(rel: string): Promise<string> {
   if (/^(https?:|data:|blob:|asset:)/.test(rel)) return rel;
+  if (remoteSession?.assetBase) {
+    return `${remoteSession.assetBase.replace(/\/+$/, "")}/${rel.replace(/^\.?[\\/]/, "")}`;
+  }
   const root = await getRoot();
   return convertFileSrc(`${root}/${rel}`);
+}
+
+export function remoteAssetBase(): string | null {
+  return remoteSession?.assetBase ?? null;
 }
 
 /**
