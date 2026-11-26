@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use axum::body::Body;
 use axum::extract::State;
@@ -36,12 +36,19 @@ pub struct McpStatus {
     pub port: u16,
     pub endpoint: String,
     pub token: String,
+    pub require_token: bool,
+}
+
+struct AuthPolicy {
+    required: bool,
+    token: String,
 }
 
 struct RunningServer {
     port: u16,
     cancellation: CancellationToken,
     task: tauri::async_runtime::JoinHandle<()>,
+    auth: Arc<RwLock<AuthPolicy>>,
 }
 
 #[derive(Default)]
@@ -56,7 +63,14 @@ fn status(config: &Config, running: bool, port: u16) -> McpStatus {
         port,
         endpoint: format!("http://127.0.0.1:{port}/mcp"),
         token: config.mcp_token.clone(),
+        require_token: config.mcp_require_token,
     }
+}
+
+fn update_auth_policy(auth: &RwLock<AuthPolicy>, config: &Config) {
+    let mut policy = auth.write().unwrap_or_else(|error| error.into_inner());
+    policy.required = config.mcp_require_token;
+    policy.token.clone_from(&config.mcp_token);
 }
 
 async fn current_status(app: &AppHandle<tauri::Wry>, state: &McpState) -> AppResult<McpStatus> {
@@ -67,7 +81,7 @@ async fn current_status(app: &AppHandle<tauri::Wry>, state: &McpState) -> AppRes
     {
         server.take();
     }
-    let config = config::ensure_mcp_token(app)?;
+    let config = config::get(app);
     match server.as_ref() {
         Some(running) => Ok(status(&config, true, running.port)),
         None => Ok(status(&config, false, config.mcp_port)),
@@ -103,6 +117,27 @@ pub async fn mcp_set_port(
 }
 
 #[tauri::command]
+pub async fn mcp_set_require_token(
+    app: AppHandle<tauri::Wry>,
+    state: TauriState<'_, McpState>,
+    required: bool,
+) -> AppResult<McpStatus> {
+    let mut server = state.server.lock().await;
+    if server
+        .as_ref()
+        .is_some_and(|running| running.task.inner().is_finished())
+    {
+        server.take();
+    }
+    let config = config::set_mcp_require_token(&app, required)?;
+    if let Some(running) = server.as_ref() {
+        update_auth_policy(&running.auth, &config);
+        return Ok(status(&config, true, running.port));
+    }
+    Ok(status(&config, false, config.mcp_port))
+}
+
+#[tauri::command]
 pub async fn mcp_rotate_token(
     app: AppHandle<tauri::Wry>,
     state: TauriState<'_, McpState>,
@@ -127,7 +162,10 @@ pub async fn mcp_start(
     state: TauriState<'_, McpState>,
 ) -> AppResult<McpStatus> {
     let mut slot = state.server.lock().await;
-    let config = config::ensure_mcp_token(&app)?;
+    let mut config = config::get(&app);
+    if config.mcp_require_token && config.mcp_token.is_empty() {
+        config = config::ensure_mcp_token(&app)?;
+    }
     if slot
         .as_ref()
         .is_some_and(|running| !running.task.inner().is_finished())
@@ -151,10 +189,14 @@ pub async fn mcp_start(
             .with_json_response(true)
             .with_cancellation_token(service_cancel),
     );
+    let auth = Arc::new(RwLock::new(AuthPolicy {
+        required: config.mcp_require_token,
+        token: config.mcp_token.clone(),
+    }));
     let router = Router::new()
         .nest_service("/mcp", service)
         .layer(middleware::from_fn_with_state(
-            Arc::new(config.mcp_token.clone()),
+            auth.clone(),
             authorize_request,
         ));
     let shutdown = cancellation.clone();
@@ -171,6 +213,7 @@ pub async fn mcp_start(
         port,
         cancellation,
         task,
+        auth,
     });
     Ok(status(&config, true, port))
 }
@@ -191,7 +234,7 @@ pub async fn mcp_stop(
 }
 
 async fn authorize_request(
-    State(expected_token): State<Arc<String>>,
+    State(auth): State<Arc<RwLock<AuthPolicy>>>,
     request: Request<Body>,
     next: Next,
 ) -> Response {
@@ -206,22 +249,33 @@ async fn authorize_request(
         }
     }
 
-    let supplied = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .unwrap_or_default();
-    let authorized = supplied.len() == expected_token.len()
-        && bool::from(supplied.as_bytes().ct_eq(expected_token.as_bytes()));
-    if !authorized {
-        return (
-            StatusCode::UNAUTHORIZED,
-            [(header::WWW_AUTHENTICATE, "Bearer")],
-        )
-            .into_response();
+    let (required, expected_token) = {
+        let policy = auth.read().unwrap_or_else(|error| error.into_inner());
+        (policy.required, policy.token.clone())
+    };
+    if required {
+        let supplied = request
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .unwrap_or_default();
+        if !token_authorized(true, &expected_token, supplied) {
+            return (
+                StatusCode::UNAUTHORIZED,
+                [(header::WWW_AUTHENTICATE, "Bearer")],
+            )
+                .into_response();
+        }
     }
     next.run(request).await
+}
+
+fn token_authorized(required: bool, expected: &str, supplied: &str) -> bool {
+    !required
+        || (!expected.is_empty()
+            && supplied.len() == expected.len()
+            && bool::from(supplied.as_bytes().ct_eq(expected.as_bytes())))
 }
 
 fn is_loopback_origin(origin: Url) -> bool {
@@ -676,6 +730,20 @@ mod tests {
         ] {
             assert!(is_loopback_origin(Url::parse(origin).unwrap()), "{origin}");
         }
+    }
+
+    #[test]
+    fn disabled_auth_accepts_any_or_missing_token() {
+        assert!(token_authorized(false, "", ""));
+        assert!(token_authorized(false, "secret", "wrong"));
+    }
+
+    #[test]
+    fn enabled_auth_requires_the_matching_token() {
+        assert!(token_authorized(true, "secret", "secret"));
+        assert!(!token_authorized(true, "secret", ""));
+        assert!(!token_authorized(true, "secret", "wrong"));
+        assert!(!token_authorized(true, "", ""));
     }
 
     #[test]

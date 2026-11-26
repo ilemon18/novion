@@ -83,12 +83,16 @@ To export it: Keychain Access -> My Certificates -> Developer ID Application -> 
 
 The optional MCP server is implemented in `src-tauri/src/mcp.rs`; its settings
 UI is `src/components/settings/McpSection.tsx`. It uses `rmcp` Streamable HTTP
-with tools only, binds to `127.0.0.1`, and defaults to port `39261`. The port and
-bearer token are stored in the application config as `mcpPort` and `mcpToken`.
+with tools only, binds to `127.0.0.1`, and defaults to port `39261`. The port,
+bearer token, and token-authentication flag are stored in the application config
+as `mcpPort`, `mcpToken`, and `mcpRequireToken`.
 
-The server never starts with the app. `mcp_get_status` is also what creates the
-first token, and `mcp_set_port` / `mcp_rotate_token` only work while the server
-is stopped.
+The server never starts with the app. Token authentication is off by default.
+`mcp_get_status` only reads state and does not create a token; enabling
+authentication through `mcp_set_require_token` creates one on demand. The
+`mcp_set_require_token` toggle applies immediately, even while the server is
+running. `mcp_set_port` and `mcp_rotate_token` only work while the server is
+stopped.
 
 Run the MCP unit tests:
 
@@ -96,9 +100,12 @@ Run the MCP unit tests:
 cargo test --manifest-path src-tauri/Cargo.toml mcp::tests
 ```
 
-Manual check: run `pnpm app:dev`, open **Settings → MCP**, start the server, and
-confirm that a request without the bearer token gets `401`. Copy the connection
-details into an MCP client and verify `initialize` plus `tools/list` succeed.
+Manual check: run `pnpm app:dev`, open **Settings → MCP**, and start the server.
+Confirm that `initialize` and `tools/list` succeed without an `Authorization`
+header. Turn on **Require access token** while the server is still running and
+confirm that the same request now gets `401`; retry with the displayed token and
+confirm it succeeds. Turn the toggle off again and confirm anonymous requests
+work without restarting the server.
 
 ## LAN sharing development
 

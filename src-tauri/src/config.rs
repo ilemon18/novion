@@ -38,10 +38,15 @@ pub struct Config {
     /// starts automatically, even when a port has been saved here.
     #[serde(default = "default_mcp_port")]
     pub mcp_port: u16,
-    /// Local MCP bearer token. An empty token is initialized on first visit to
-    /// MCP settings and then persisted so client configuration remains stable.
+    /// Local MCP bearer token. It is created only when token authentication is
+    /// enabled, and is kept when authentication is turned off so saved client
+    /// configuration remains stable if it is enabled again.
     #[serde(default)]
     pub mcp_token: String,
+    /// When true, MCP requests must include the configured bearer token.
+    /// Authentication is opt-in and off by default.
+    #[serde(default)]
+    pub mcp_require_token: bool,
 }
 
 fn default_true() -> bool {
@@ -83,6 +88,7 @@ impl Default for Config {
             history_enabled: true,
             mcp_port: MCP_PORT_DEFAULT,
             mcp_token: String::new(),
+            mcp_require_token: false,
         }
     }
 }
@@ -111,6 +117,13 @@ pub fn load<R: Runtime>(app: &AppHandle<R>) -> Config {
         config.mcp_port = MCP_PORT_DEFAULT;
     }
     config
+}
+
+/// Current config, from the cache when the app has initialized it.
+pub fn get<R: Runtime>(app: &AppHandle<R>) -> Config {
+    app.try_state::<ConfigState>()
+        .and_then(|state| state.0.lock().ok().map(|guard| guard.clone()))
+        .unwrap_or_else(|| load(app))
 }
 
 pub fn current<R: Runtime>(app: &AppHandle<R>) -> Storage {
@@ -172,17 +185,28 @@ pub fn set<R: Runtime>(app: &AppHandle<R>, storage: Storage) -> AppResult<Config
     update(app, |cfg| cfg.storage = storage)
 }
 
-/// Ensure a bearer credential exists before it is shown to the user or the
-/// HTTP service is started. Existing config files gain this field lazily.
+/// Ensure a bearer credential exists before token authentication is enabled or
+/// the HTTP service starts with it enabled. Existing config files gain this
+/// field lazily.
 pub fn ensure_mcp_token<R: Runtime>(app: &AppHandle<R>) -> AppResult<Config> {
-    let current = app
-        .try_state::<ConfigState>()
-        .and_then(|state| state.0.lock().ok().map(|guard| guard.clone()))
-        .unwrap_or_else(|| load(app));
+    let current = get(app);
     if !current.mcp_token.is_empty() {
         return Ok(current);
     }
     update(app, |cfg| cfg.mcp_token = uuid::Uuid::new_v4().to_string())
+}
+
+fn apply_mcp_require_token(cfg: &mut Config, required: bool) {
+    cfg.mcp_require_token = required;
+    if required && cfg.mcp_token.is_empty() {
+        cfg.mcp_token = uuid::Uuid::new_v4().to_string();
+    }
+}
+
+/// Turns bearer-token authentication on or off. Enabling it creates a token
+/// when one does not exist yet; disabling it keeps the token for later reuse.
+pub fn set_mcp_require_token<R: Runtime>(app: &AppHandle<R>, required: bool) -> AppResult<Config> {
+    update(app, |cfg| apply_mcp_require_token(cfg, required))
 }
 
 pub fn set_mcp_port<R: Runtime>(app: &AppHandle<R>, port: u16) -> AppResult<Config> {
@@ -245,6 +269,39 @@ mod tests {
         assert_eq!(cfg.history_limit, 10);
         assert_eq!(cfg.mcp_port, MCP_PORT_DEFAULT);
         assert!(cfg.mcp_token.is_empty());
+        assert!(!cfg.mcp_require_token);
+    }
+
+    #[test]
+    fn mcp_auth_flag_defaults_to_off_for_older_configs() {
+        // config files written before optional MCP auth have no flag at all
+        let cfg: Config = serde_json::from_str(r#"{"mcpToken":"existing"}"#).unwrap();
+        assert!(!cfg.mcp_require_token);
+        assert_eq!(cfg.mcp_token, "existing");
+    }
+
+    #[test]
+    fn mcp_auth_flag_round_trips_through_camel_case() {
+        let cfg: Config = serde_json::from_str(r#"{"mcpRequireToken":true}"#).unwrap();
+        assert!(cfg.mcp_require_token);
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("\"mcpRequireToken\":true"));
+    }
+
+    #[test]
+    fn enabling_mcp_auth_creates_a_token_once_and_disabling_keeps_it() {
+        let mut cfg = Config::default();
+        apply_mcp_require_token(&mut cfg, true);
+        let token = cfg.mcp_token.clone();
+        assert!(cfg.mcp_require_token);
+        assert!(!token.is_empty());
+
+        apply_mcp_require_token(&mut cfg, false);
+        assert!(!cfg.mcp_require_token);
+        assert_eq!(cfg.mcp_token, token);
+
+        apply_mcp_require_token(&mut cfg, true);
+        assert_eq!(cfg.mcp_token, token);
     }
 
     #[test]

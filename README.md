@@ -40,7 +40,7 @@ Share a workspace with another Novion on the same network. The host keeps the fi
 See [docs/sharing.md](docs/sharing.md) for setup, security, and limitations.
 
 ### MCP
-Let local AI clients search, read and edit notes through an optional MCP server that listens on your computer only.
+Let local AI clients search, read and edit notes through an optional MCP server that listens on your computer only. No token is required by default; enable token authentication in settings when needed.
 
 See [docs/mcp.md](docs/mcp.md) for client setup and the full tool reference.
 

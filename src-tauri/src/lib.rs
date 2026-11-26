@@ -87,6 +87,7 @@ pub fn run() {
             config::set_history_enabled,
             mcp::mcp_get_status,
             mcp::mcp_set_port,
+            mcp::mcp_set_require_token,
             mcp::mcp_rotate_token,
             mcp::mcp_start,
             mcp::mcp_stop,

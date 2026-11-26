@@ -13,7 +13,8 @@ available only while Novion is running.
   workspace.
 - It uses MCP Streamable HTTP and returns JSON responses.
 - It advertises **tools only** — there are no MCP resources or prompts.
-- Every request needs the bearer token shown in Novion.
+- Bearer-token authentication is optional and off by default. Turn on
+  **Require access token** to require it.
 - The server is not exposed over the LAN. Another computer cannot connect to
   this MCP endpoint directly.
 
@@ -22,9 +23,13 @@ available only while Novion is running.
 1. Open **Settings → MCP**.
 2. Choose a port and press **Save port** while the server is stopped.
 3. Press **Start server**.
-4. Press **Copy connection details**, or copy the endpoint and token separately.
-5. Add the endpoint and `Authorization` header to an MCP client that supports
-   Streamable HTTP and custom HTTP headers.
+4. Optional: turn on **Require access token** if other apps on this computer
+   should not access your notes. Novion creates the token when you enable it.
+5. Press **Copy connection details**. With authentication enabled, the copied
+   text includes the `Authorization` header; with it disabled, it contains only
+   the endpoint.
+6. Add the endpoint to an MCP client that supports Streamable HTTP. Add the
+   `Authorization` header only when token authentication is enabled.
 
 The default endpoint is:
 
@@ -32,7 +37,7 @@ The default endpoint is:
 http://127.0.0.1:39261/mcp
 ```
 
-Send the token as a bearer credential:
+When token authentication is enabled, send the token as a bearer credential:
 
 ```http
 Authorization: Bearer <token shown in Novion>
@@ -46,18 +51,26 @@ Port rules:
 
 Token rules:
 
-- The token is created the first time MCP settings are opened and is stored in
-  Novion's application config.
-- It remains stable between launches, so saved client configurations keep
-  working.
+- Token authentication is **off by default**; requests without an
+  `Authorization` header are accepted.
+- Turning on **Require access token** creates a token when one does not exist
+  yet and stores it in Novion's application config.
+- The token remains stable between launches, so saved client configurations
+  keep working.
+- Turning authentication off keeps the token but stops checking it. Turning it
+  back on reuses the same token.
+- The toggle applies immediately, even while the server is running; stopping
+  and restarting the server is not required.
 - **Rotate token** is available only while the server is stopped. Existing
   clients immediately receive `401 Unauthorized` after a rotation.
-- **Copy connection details** copies the endpoint and the `Authorization` line.
+- **Copy connection details** copies the endpoint and, only when authentication
+  is enabled, the `Authorization` line.
 
 ## Client configuration
 
-Client formats vary. The important parts are the Streamable HTTP URL and the
-request header. A common JSON shape looks like this:
+Client formats vary. The important part is the Streamable HTTP URL; the request
+header is needed only when **Require access token** is enabled. A common JSON
+shape with authentication enabled looks like this:
 
 ```json
 {
@@ -74,14 +87,19 @@ request header. A common JSON shape looks like this:
 
 Some clients use a different key such as `serverUrl`, require a transport field
 such as `"type": "http"`, or ask for the URL and headers in separate UI fields.
-Use the endpoint from Novion and add the bearer header using that client's
-supported setting.
+Use the endpoint from Novion. If token authentication is enabled, add the
+bearer header using that client's supported setting; otherwise omit the
+`headers` object.
 
 ## Security model
 
 - The listener only binds to `127.0.0.1`; it never listens on a LAN interface.
-- The bearer token is compared in constant time. A missing or incorrect token
-  returns `401 Unauthorized`.
+- Token authentication is off by default. In that mode, any process on this
+  computer that can reach the loopback endpoint can read and edit notes through
+  the server. Enable **Require access token** if the computer runs other apps
+  you do not trust with your workspace.
+- When token authentication is enabled, the bearer token is compared in
+  constant time. A missing or incorrect token returns `401 Unauthorized`.
 - If a request includes an `Origin` header, it must be a loopback origin using
   `http`, `https`, or `tauri`, with one of these hosts:
   - `localhost`
@@ -269,8 +287,9 @@ Use the Novion UI for those operations.
 
 ## Troubleshooting
 
-- **`401 Unauthorized`:** the token is missing, incorrect, or was rotated.
-  Copy the current token from **Settings → MCP**.
+- **`401 Unauthorized`:** token authentication is enabled and the token is
+  missing, incorrect, or was rotated. Copy the current token from
+  **Settings → MCP**, or turn **Require access token** off.
 - **`403 Forbidden`:** the request came from a non-loopback `Origin`. Use a
   local client, or remove the invalid origin header.
 - **Server will not start:** the port may already be in use. Stop the server,

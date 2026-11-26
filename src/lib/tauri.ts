@@ -197,6 +197,7 @@ export interface McpStatus {
   port: number;
   endpoint: string;
   token: string;
+  requireToken: boolean;
 }
 
 export interface NotionConnection {
@@ -495,6 +496,8 @@ export const api = {
   },
   mcpGetStatus: () => invoke<McpStatus>("mcp_get_status"),
   mcpSetPort: (port: number) => invoke<McpStatus>("mcp_set_port", { port }),
+  mcpSetRequireToken: (required: boolean) =>
+    invoke<McpStatus>("mcp_set_require_token", { required }),
   mcpRotateToken: () => invoke<McpStatus>("mcp_rotate_token"),
   mcpStart: () => invoke<McpStatus>("mcp_start"),
   mcpStop: () => invoke<McpStatus>("mcp_stop"),

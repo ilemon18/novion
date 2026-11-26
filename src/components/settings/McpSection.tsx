@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Copy, Eye, EyeOff, Loader2, Play, RotateCcw, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { api, errorMessage, type McpStatus } from "@/lib/tauri";
 import { useT } from "@/i18n";
 import { RemoteSettingsBlocked, useRemoteSettingsBlocked } from "./RemoteSettingsBlocked";
@@ -64,7 +65,9 @@ export function McpSection() {
     if (!status) return;
     try {
       await navigator.clipboard.writeText(
-        `${status.endpoint}\nAuthorization: Bearer ${status.token}`,
+        status.requireToken
+          ? `${status.endpoint}\nAuthorization: Bearer ${status.token}`
+          : status.endpoint,
       );
       notify(t("Copied"));
     } catch (err) {
@@ -135,36 +138,73 @@ export function McpSection() {
           {status?.endpoint ?? `http://127.0.0.1:${port}/mcp`}
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <label htmlFor="mcp-token" className="text-[11px] font-medium text-muted-foreground">
-            {t("Access token")}
-          </label>
-          <button
-            type="button"
-            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-            onClick={() => setShowToken((value) => !value)}
-            aria-label={t(showToken ? "Hide token" : "Show token")}
-          >
-            {showToken ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-            {t(showToken ? "Hide token" : "Show token")}
-          </button>
-        </div>
-        <Input
-          id="mcp-token"
-          value={status?.token ?? ""}
-          type={showToken ? "text" : "password"}
-          readOnly
-          className="mt-1.5 font-mono text-[11px]"
-        />
-        <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-          {t("Use this endpoint with the bearer token in an MCP client.")}
+        <div className="mt-4 flex items-start justify-between gap-3 border-t border-border/70 pt-3">
+          <div className="min-w-0">
+            <div className="text-[11px] font-medium text-muted-foreground">
+              {t("Require access token")}
+            </div>
+            <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {status?.requireToken
+                ? t("Use this endpoint with the bearer token in an MCP client.")
+                : t("Optional. Enable this when other apps on this computer should not access your notes.")}
+            </div>
+          </div>
+          <div className={busy || !status ? "pointer-events-none opacity-60" : undefined}>
+            <Switch
+              checked={status?.requireToken ?? false}
+              onChange={(required) => void run(() => api.mcpSetRequireToken(required))}
+              label={t("Require access token")}
+            />
+          </div>
         </div>
 
+        {status && !status.requireToken ? (
+          <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+            <AlertTriangle className="mt-[1px] size-3.5 shrink-0" />
+            <span className="min-w-0 break-words">
+              {t("Token authentication is off. While the server is running, any app on this computer can access notes through it.")}
+            </span>
+          </div>
+        ) : null}
+
+        {status?.requireToken ? (
+          <div className="mt-3">
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="mcp-token" className="text-[11px] font-medium text-muted-foreground">
+                {t("Access token")}
+              </label>
+              <button
+                type="button"
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                onClick={() => setShowToken((value) => !value)}
+                aria-label={t(showToken ? "Hide token" : "Show token")}
+              >
+                {showToken ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+                {t(showToken ? "Hide token" : "Show token")}
+              </button>
+            </div>
+            <Input
+              id="mcp-token"
+              value={status.token}
+              type={showToken ? "text" : "password"}
+              readOnly
+              className="mt-1.5 font-mono text-[11px]"
+            />
+          </div>
+        ) : null}
+
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" disabled={busy || status?.running} onClick={() => void run(api.mcpRotateToken)}>
-            <RotateCcw className="size-3.5" />
-            {t("Rotate token")}
-          </Button>
+          {status?.requireToken ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || status.running}
+              onClick={() => void run(api.mcpRotateToken)}
+            >
+              <RotateCcw className="size-3.5" />
+              {t("Rotate token")}
+            </Button>
+          ) : null}
           <Button size="sm" variant="outline" disabled={!status} onClick={() => void copyConnection()}>
             <Copy className="size-3.5" />
             {t("Copy connection details")}
