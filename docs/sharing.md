@@ -226,6 +226,12 @@ Document bodies keep the existing mtime conflict check. If another computer
 saves the same note first, the second save pauses with the normal conflict
 banner instead of silently overwriting the newer file.
 
+While the workspace is being shared (or when this app is connected to a host),
+an open note is checked about every two seconds. If the note changes on the
+other computer and the local copy has no unsaved edits, it reloads
+automatically. If there are unsaved edits, the editor is left alone and the
+normal conflict banner decides what to keep.
+
 This is shared access, not live co-editing. Changes are not streamed to other
 clients in real time.
 

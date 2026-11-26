@@ -58,8 +58,13 @@ export const useRemote = create<RemoteStore>((set, get) => ({
 
   load: async () => {
     try {
-      const status = await api.remoteGetState();
-      set({ status, loading: false, error: status.error ?? null });
+      // Load the sharing side too: the host needs to know it is in shared mode
+      // so an open document can refresh when a client writes to it.
+      const [status, share] = await Promise.all([
+        api.remoteGetState(),
+        api.shareGetStatus().catch(() => null),
+      ]);
+      set({ status, share: share ?? get().share, loading: false, error: status.error ?? null });
     } catch (err) {
       set({ loading: false, error: errorMessage(err) });
     }

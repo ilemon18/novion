@@ -12,9 +12,12 @@ import {
 import { api, errorMessage, type Backlink } from "@/lib/tauri";
 import { saveQueue } from "@/lib/save-scheduler";
 import { setActiveEditor } from "@/lib/editor-registry";
+import { decideExternalChange } from "@/lib/external-change";
 import { ancestorFolders, isTrashed, useWorkspace } from "@/store/workspace";
+import { useRemote } from "@/store/remote";
 import { useUi } from "@/store/ui";
 import { useT } from "@/i18n";
+import { RemoteBadge } from "@/components/RemoteBadge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -33,6 +36,8 @@ import { VersionHistoryDialog } from "./VersionHistoryDialog";
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 /** how often the open document is checked for changes made outside the app */
 const STAMP_POLL_MS = 6000;
+/** shared workspaces refresh faster; this is still polling, not live sync */
+const SHARED_STAMP_POLL_MS = 2000;
 
 function isConflict(err: unknown): boolean {
   return (
@@ -70,6 +75,7 @@ export default function DocView({ docId }: { docId: string }) {
   const findSeed = useUi((s) => s.findSeed);
   const setFindSeed = useUi((s) => s.setFindSeed);
   const setSidebarOpen = useUi((s) => s.setSidebarOpen);
+  const sharedMode = useRemote((s) => !!s.status?.connected || !!s.share?.running);
 
   /**
    * `loaded` is keyed by docId on purpose: the editor must only mount once the
@@ -97,6 +103,8 @@ export default function DocView({ docId }: { docId: string }) {
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const editorRef = useRef<TiptapEditor | null>(null);
   const renameTimer = useRef<number | null>(null);
+  /** number of rename writes on the wire (the timer has already fired) */
+  const renameInFlightRef = useRef(0);
   /** last content the editor handed over, for "keep mine" after a conflict */
   const snapshotRef = useRef<unknown>(null);
   /** mtime of the file this client is looking at; `0` = never loaded */
@@ -174,13 +182,42 @@ export default function DocView({ docId }: { docId: string }) {
     }
   }, [docId]);
 
+  /**
+   * Rename writes the title into the document file too, so the poll must not
+   * mistake that write for a remote edit while the timer has already fired but
+   * the promise is still in flight.
+   */
+  const commitRename = useCallback(
+    async (value: string) => {
+      renameInFlightRef.current += 1;
+      try {
+        await rename(docId, value);
+        await refreshStamp();
+      } finally {
+        renameInFlightRef.current -= 1;
+      }
+    },
+    [docId, refreshStamp, rename],
+  );
+
   const flushRename = useCallback(() => {
-    if (renameTimer.current !== null) {
-      clearTimeout(renameTimer.current);
-      renameTimer.current = null;
-      void rename(docId, titleRef.current).then(refreshStamp);
-    }
-  }, [docId, refreshStamp, rename]);
+    if (renameTimer.current === null) return;
+    clearTimeout(renameTimer.current);
+    renameTimer.current = null;
+    void commitRename(titleRef.current);
+  }, [commitRename]);
+
+  /** Reloads the body from disk, discarding the editor's in-memory copy. */
+  const reloadFromDisk = useCallback(() => {
+    saveQueue.cancel(docKey);
+    snapshotRef.current = null;
+    setBanner(null);
+    setOutline([]);
+    setActiveEditor(null);
+    setEditor(null);
+    setLoaded(null);
+    setRevision((value) => value + 1);
+  }, [docKey]);
 
   // load the document on demand, then hand the editor its own payload
   useEffect(() => {
@@ -234,8 +271,9 @@ export default function DocView({ docId }: { docId: string }) {
 
   /**
    * Watches the file for changes made outside this editor — another Mac through
-   * iCloud, a restore, a hand edit. Only a change while nothing is pending is
-   * announced; with unsaved edits the save path reports the conflict instead.
+   * iCloud, a restore, a hand edit, or a shared client. A clean document in a
+   * shared workspace reloads in place; everything else keeps the explicit
+   * banner or waits for the save/conflict path.
    */
   useEffect(() => {
     if (loaded?.docId !== docId) return;
@@ -248,20 +286,30 @@ export default function DocView({ docId }: { docId: string }) {
           setBanner((current) => (current?.kind === "external" ? null : current));
           return;
         }
-        const status = saveQueue.status(docKey);
-        if (status === "idle" || status === "saved") {
+        const action = decideExternalChange({
+          shared: sharedMode,
+          saveStatus: saveQueue.status(docKey),
+          titleEditing: document.activeElement === titleInputRef.current,
+          renamePending: renameTimer.current !== null || renameInFlightRef.current > 0,
+        });
+        if (action === "reload") {
+          reloadFromDisk();
+        } else if (action === "banner") {
           setBanner((current) => (current?.kind === "conflict" ? current : { kind: "external" }));
         }
       } catch {
         /* a transient stat failure is not worth a banner */
       }
     };
-    const timer = window.setInterval(() => void tick(), STAMP_POLL_MS);
+    const timer = window.setInterval(
+      () => void tick(),
+      sharedMode ? SHARED_STAMP_POLL_MS : STAMP_POLL_MS,
+    );
     return () => {
       alive = false;
       window.clearInterval(timer);
     };
-  }, [docId, docKey, loaded?.docId]);
+  }, [docId, docKey, loaded?.docId, reloadFromDisk, sharedMode]);
 
   // a global search hit asks this document to open the find bar on its term
   useEffect(() => {
@@ -299,20 +347,9 @@ export default function DocView({ docId }: { docId: string }) {
     if (renameTimer.current !== null) clearTimeout(renameTimer.current);
     renameTimer.current = window.setTimeout(() => {
       renameTimer.current = null;
-      void rename(docId, value).then(refreshStamp);
+      void commitRename(value);
     }, 450);
   };
-
-  /** Reloads the body from disk, discarding the editor's in-memory copy. */
-  const reloadFromDisk = useCallback(() => {
-    saveQueue.cancel(docKey);
-    setBanner(null);
-    setOutline([]);
-    setActiveEditor(null);
-    setEditor(null);
-    setLoaded(null);
-    setRevision((value) => value + 1);
-  }, [docKey]);
 
   const keepMine = useCallback(async () => {
     const snapshot = snapshotRef.current;
@@ -611,11 +648,12 @@ export default function DocView({ docId }: { docId: string }) {
         </div>
 
         {/* The first 42px of the column are reserved for this strip, on every
-            platform, so the pill can never sit on the breadcrumb row. Windows
-            used to start the row at 24px, which left the pill on top of the
-            pin / find / outline / ⋮ buttons on a narrow window. */}
+            platform, so it can never sit on the breadcrumb row. The remote
+            badge shares this one right-aligned row with update/save, which is
+            what keeps a long host name from covering the save indicator. */}
         {!findOpen && (
-          <div className="pointer-events-none absolute right-5 top-[13px] z-30 flex items-center gap-3">
+          <div className="pointer-events-none absolute right-5 top-0 z-30 flex h-[42px] items-center gap-3">
+            <RemoteBadge />
             <UpdateButton />
             <SaveIndicator saveKey={docKey} />
           </div>
