@@ -22,7 +22,7 @@ interface NotionStore {
   connect: (token: string) => Promise<boolean>;
   disconnect: () => Promise<void>;
   setParent: (target: string) => Promise<{ reset: boolean; title: string } | null>;
-  sync: (includeCompleted: boolean) => Promise<NotionSyncStats | null>;
+  sync: () => Promise<NotionSyncStats | null>;
   clearError: () => void;
   resetStats: () => void;
 }
@@ -89,19 +89,24 @@ export const useNotion = create<NotionStore>((set, get) => ({
     }
   },
 
-  sync: async (includeCompleted) => {
+  sync: async () => {
     set({ syncing: true, progress: null, error: null, lastStats: null });
     try {
       // never push a stale snapshot: finish pending autosaves first
       await saveQueue.flushAll();
-      const stats = await api.notionSync({ includeCompleted });
+      const stats = await api.notionSync();
       const info = await api.notionGetState();
       set({ syncing: false, progress: null, lastStats: stats, info });
 
       // When nothing at all got through, the first failure is the run-level
       // reason (dead token, no permission, wrong target): show it as a banner.
       // It is language-independent, unlike matching on the message text.
-      const attempted = stats.foldersCreated + stats.pagesCreated + stats.pagesUpdated;
+      const attempted =
+        stats.foldersCreated +
+        stats.pagesCreated +
+        stats.pagesUpdated +
+        stats.pagesRestored +
+        stats.pagesTrashed;
       if (attempted === 0 && stats.failures.length > 0) {
         set({ error: stats.failures[0].message });
       }

@@ -43,7 +43,6 @@ export function NotionSection() {
   const [token, setToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [target, setTarget] = useState("");
-  const [includeCompleted, setIncludeCompleted] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,7 +87,7 @@ export function NotionSection() {
 
   const startSync = async () => {
     setNotice(null);
-    await sync(includeCompleted);
+    await sync();
   };
 
   return (
@@ -269,21 +268,14 @@ export function NotionSection() {
 
       {/* sync -------------------------------------------------------- */}
       <div className="mt-5 border-t border-border/70 pt-4">
-        <div className="flex items-center justify-between">
-          <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-            {t("Sync")}
-          </div>
-          <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={includeCompleted}
-              onChange={(e) => setIncludeCompleted(e.target.checked)}
-              disabled={syncing}
-              className="size-3.5 accent-[var(--brand-strong)]"
-            />
-            {t("Include archived")}
-          </label>
+        <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          {t("Sync")}
         </div>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          {t(
+            "One-way: Novion overwrites Notion. Archived notes stay in their own folder; notes in Trash are removed from Notion.",
+          )}
+        </p>
 
         {syncing ? (
           <div className="mt-3">
@@ -370,8 +362,36 @@ export function NotionSection() {
               {lastStats.pagesUpdated > 0 && (
                 <li>· {t("Updated {count} note pages", { count: lastStats.pagesUpdated })}</li>
               )}
-              {lastStats.pagesSkipped > 0 && (
-                <li>· {t("Skipped {count} unchanged notes", { count: lastStats.pagesSkipped })}</li>
+              {lastStats.pagesRestored > 0 && (
+                <li>
+                  · {t("Restored {count} note pages from the Notion trash", {
+                    count: lastStats.pagesRestored,
+                  })}
+                </li>
+              )}
+              {lastStats.pagesTrashed > 0 && (
+                <li>
+                  · {t("Moved {count} note pages to the Notion trash", {
+                    count: lastStats.pagesTrashed,
+                  })}
+                </li>
+              )}
+              {lastStats.foldersRestored > 0 && (
+                <li>
+                  · {t("Restored {count} folder pages from the Notion trash", {
+                    count: lastStats.foldersRestored,
+                  })}
+                </li>
+              )}
+              {lastStats.foldersTrashed > 0 && (
+                <li>
+                  · {t("Moved {count} folder pages to the Notion trash", {
+                    count: lastStats.foldersTrashed,
+                  })}
+                </li>
+              )}
+              {lastStats.pagesVerified > 0 && (
+                <li>· {t("Verified {count} unchanged notes", { count: lastStats.pagesVerified })}</li>
               )}
               {lastStats.imagesUploaded > 0 && (
                 <li>· {t("Uploaded {count} images", { count: lastStats.imagesUploaded })}</li>
@@ -387,7 +407,11 @@ export function NotionSection() {
               {lastStats.foldersCreated +
                 lastStats.pagesCreated +
                 lastStats.pagesUpdated +
-                lastStats.pagesSkipped ===
+                lastStats.pagesVerified +
+                lastStats.pagesRestored +
+                lastStats.pagesTrashed +
+                lastStats.foldersRestored +
+                lastStats.foldersTrashed ===
                 0 && <li>· {t("Nothing needed syncing")}</li>}
             </ul>
 

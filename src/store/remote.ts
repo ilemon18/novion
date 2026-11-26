@@ -6,6 +6,7 @@ import {
   type RemoteStatus,
   type ShareStatus,
 } from "@/lib/tauri";
+import { t } from "@/i18n";
 import { useWorkspace } from "@/store/workspace";
 
 interface RemoteStore {
@@ -29,8 +30,7 @@ interface RemoteStore {
 
   startShare: () => Promise<void>;
   stopShare: () => Promise<void>;
-  setSharePort: (port: number) => Promise<void>;
-  setShareName: (name: string) => Promise<void>;
+  saveShareConfig: (name: string, port: number) => Promise<boolean>;
   newPairingCode: () => Promise<string | null>;
   revokeDevice: (id: string) => Promise<void>;
   clearError: () => void;
@@ -90,6 +90,10 @@ export const useRemote = create<RemoteStore>((set, get) => ({
   },
 
   connect: async (host, code) => {
+    if (get().share?.running) {
+      set({ error: t("Stop sharing first") });
+      return false;
+    }
     set({ busy: true, error: null });
     try {
       const status = await api.remoteConnect({
@@ -110,6 +114,10 @@ export const useRemote = create<RemoteStore>((set, get) => ({
   },
 
   connectManual: async (host, port, code) => {
+    if (get().share?.running) {
+      set({ error: t("Stop sharing first") });
+      return false;
+    }
     set({ busy: true, error: null });
     try {
       const status = await api.remoteConnect({
@@ -128,6 +136,10 @@ export const useRemote = create<RemoteStore>((set, get) => ({
   },
 
   reconnectSaved: async () => {
+    if (get().share?.running) {
+      set({ error: t("Stop sharing first") });
+      return false;
+    }
     set({ busy: true, error: null });
     try {
       const status = await api.remoteConnectSaved();
@@ -176,6 +188,10 @@ export const useRemote = create<RemoteStore>((set, get) => ({
   },
 
   startShare: async () => {
+    if (get().status?.connected) {
+      set({ error: t("Disconnect first") });
+      return;
+    }
     set({ busy: true, error: null });
     try {
       const share = await api.shareStart();
@@ -206,23 +222,26 @@ export const useRemote = create<RemoteStore>((set, get) => ({
     }
   },
 
-  setSharePort: async (port) => {
+  saveShareConfig: async (name, port) => {
+    const current = get().share;
+    if (!current) return false;
     set({ busy: true, error: null });
     try {
-      const share = await api.shareSetPort(port);
+      let share = current;
+      const trimmed = name.trim();
+      if (trimmed !== share.deviceName) {
+        share = await api.shareSetDeviceName(trimmed);
+        set({ share });
+      }
+      if (port !== share.port) {
+        share = await api.shareSetPort(port);
+        set({ share });
+      }
       set({ share, busy: false });
+      return true;
     } catch (err) {
       set({ busy: false, error: errorMessage(err) });
-    }
-  },
-
-  setShareName: async (name) => {
-    set({ busy: true, error: null });
-    try {
-      const share = await api.shareSetDeviceName(name);
-      set({ share, busy: false });
-    } catch (err) {
-      set({ busy: false, error: errorMessage(err) });
+      return false;
     }
   },
 

@@ -11,8 +11,8 @@ This is a **host-authoritative remote workspace**:
 - The client cannot work offline while connected.
 - It is shared access, not real-time co-editing.
 
-The same computer can share its own workspace and connect to another host at
-the same time.
+Only one role can be active at a time. Stop sharing before connecting to
+another host, and disconnect before sharing this computer.
 
 ## Defaults and requirements
 
@@ -36,8 +36,8 @@ auto-start on the next launch.
 
 ## Host setup
 
-1. Open **Settings → Sharing**.
-2. Set **This computer's name** and **Port** while sharing is stopped.
+1. Open **Settings → Sharing** and choose **Share this computer**.
+2. Set **Name** and **Port** while sharing is stopped.
 3. Press **Start sharing**.
 4. Give the pairing code to the person connecting, or copy it.
 5. Allow Novion through the operating-system firewall if prompted.
@@ -79,10 +79,10 @@ address instead** with one of the addresses shown on the host.
 
 ## Client setup
 
-1. Open **Settings → Sharing → Connect to another computer**.
+1. Open **Settings → Sharing** and choose **Connect to another computer**.
 2. Press **Scan** and choose a discovered host.
 3. Enter the pairing code shown on the host and press **Connect**.
-4. Alternatively, open **Connect by address instead** and enter the host
+4. Alternatively, open **Manual connection** and enter the host
    address, port, and pairing code manually.
 
 The scan list shows each host's name, address, port, and workspace name.
@@ -261,7 +261,7 @@ clients in real time.
 
 - Confirm both computers are on the same Wi-Fi/LAN and neither is on a guest or
   client-isolated network.
-- If multicast DNS is blocked, use **Connect by address instead** and one of the
+- If multicast DNS is blocked, use **Manual connection** and one of the
   HTTPS addresses shown on the host.
 
 **Connection refused**
@@ -296,7 +296,7 @@ clients in real time.
 **Remote connection needs attention**
 
 - A ping failed or the connection became invalid. Open **Settings → Sharing**,
-  then reconnect or disconnect.
+  choose **Connect to another computer**, then reconnect or disconnect.
 
 **Windows firewall**
 

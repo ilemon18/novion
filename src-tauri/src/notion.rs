@@ -49,6 +49,11 @@ pub struct PageLink {
     /// without touching the remote body unless the local document is newer.
     #[serde(default)]
     pub local_hash: String,
+    /// true after the page was moved to the Notion trash because the local
+    /// node went to 回收站. Kept so a later restore can reuse the same page
+    /// instead of creating a duplicate.
+    #[serde(default)]
+    pub in_trash: bool,
 }
 
 /// One synced folder. The parent and title are cached so a run can tell a
@@ -59,6 +64,9 @@ pub struct FolderLink {
     pub page_id: String,
     pub parent_page_id: String,
     pub title: String,
+    /// see [`PageLink::in_trash`]
+    #[serde(default)]
+    pub in_trash: bool,
 }
 
 #[derive(Deserialize)]
@@ -394,6 +402,93 @@ impl NotionClient {
         .await
     }
 
+    /// Moves a page into (or out of) the Notion trash.
+    ///
+    /// The pinned API version names the field `archived`; newer versions call
+    /// it `in_trash`. Trashing an already-trashed page (for example a child of
+    /// a page we just trashed) is treated as success.
+    pub async fn set_page_trashed(&self, page_id: &str, trashed: bool) -> AppResult<()> {
+        match self
+            .patch(&format!("/pages/{page_id}"), json!({ "archived": trashed }))
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(err)
+                if trashed
+                    && matches!(err.code.as_str(), "notion_archived" | "notion_not_found") =>
+            {
+                // The parent page already put this one in the trash, or it is
+                // gone entirely: either way there is nothing left to archive.
+                Ok(())
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Restores a page and every archived ancestor from the Notion trash.
+    ///
+    /// Notion refuses to edit a page whose parent is still trashed, so the
+    /// chain is restored top-down. A page that is not trashed is a no-op.
+    pub async fn restore_page(&self, page_id: &str) -> AppResult<()> {
+        let page = self.get(&format!("/pages/{page_id}")).await?;
+        if !page_is_archived(&page) {
+            return Ok(());
+        }
+
+        // Collect the archived part of the ancestor chain, page first.
+        let mut chain: Vec<String> = Vec::new();
+        let mut current = page;
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        for _ in 0..64 {
+            let object = current.get("object").and_then(Value::as_str);
+            if page_is_archived(&current) {
+                // Only pages can be restored through PATCH /pages; a trashed
+                // database/block ancestor cannot be healed from here.
+                if object != Some("page") {
+                    break;
+                }
+                if let Some(id) = current.get("id").and_then(Value::as_str) {
+                    chain.push(id.to_string());
+                }
+            }
+            let parent = &current["parent"];
+            let kind = parent["type"].as_str().unwrap_or("");
+            let collection = match kind {
+                "page_id" => "pages",
+                "block_id" => "blocks",
+                "database_id" => "databases",
+                _ => break,
+            };
+            let Some(id) = parent[kind].as_str().filter(|id| !id.is_empty()) else {
+                break;
+            };
+            if !seen.insert((
+                collection.to_string(),
+                id.replace('-', "").to_ascii_lowercase(),
+            )) {
+                break;
+            }
+            current = match self.get(&format!("/{collection}/{id}")).await {
+                Ok(parent) => parent,
+                Err(err) if err.code == "notion_not_found" || err.code == "notion_forbidden" => {
+                    break;
+                }
+                Err(err) => return Err(err),
+            };
+        }
+
+        // Ancestors first, then the page itself.
+        for id in chain.iter().rev() {
+            if let Err(err) = self.set_page_trashed(id, false).await {
+                return Err(AppError::new(
+                    "notion_restore_failed",
+                    format!("Notion 页面「{}」恢复失败：{}", id, err.message),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Uploads raw bytes to a signed Notion upload URL (multipart, field `file`).
     pub async fn upload_bytes(
         &self,
@@ -652,8 +747,8 @@ fn state_info(cfg: &NotionConfig) -> NotionStateInfo {
         } else {
             page_url(&cfg.parent_page_id)
         },
-        synced_docs: cfg.pages.len(),
-        synced_folders: cfg.folders.len(),
+        synced_docs: cfg.pages.values().filter(|link| !link.in_trash).count(),
+        synced_folders: cfg.folders.values().filter(|link| !link.in_trash).count(),
         last_sync_at: cfg.last_sync_at,
     }
 }
@@ -775,13 +870,6 @@ pub async fn notion_set_parent<R: Runtime>(
             "这是一个数据库，不是页面：请选择普通页面作为同步目标",
         ));
     }
-    if client.archived_location(&page).await?.is_some() {
-        return Err(AppError::new(
-            "notion_bad_target",
-            "这个页面或其父级在回收站里：请先在 Notion 里恢复它及父级，或换一个目标页面",
-        ));
-    }
-
     let title = {
         let title = page_title(&page);
         if title.trim().is_empty() {

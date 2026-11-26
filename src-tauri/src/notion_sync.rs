@@ -1,13 +1,18 @@
-//! One-way, incremental Notion sync.
+//! One-way, incremental Notion mirror.
 //!
 //! The local workspace is authoritative: folders and documents are pushed to
 //! Notion, while edits made only in Notion are deliberately ignored. The run is
 //! sequential (Notion allows roughly three requests per second), reports
 //! progress through `notion:progress`, and keeps going when one node fails.
+//!
+//! The remote tree mirrors the local one: nodes that go to 回收站 are moved to
+//! the Notion trash (and kept mapped so a later restore reuses the same page),
+//! pages found in the Notion trash are restored instead of duplicated, and the
+//! 已归档 subtree is always synced into its own folder page.
 
 use std::collections::{HashMap, HashSet};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -24,13 +29,6 @@ const MAX_BLOCKS: usize = 100;
 /// Single-part upload limit; anything bigger degrades to a text placeholder.
 const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncOptions {
-    #[serde(default)]
-    pub include_completed: bool,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncFailure {
@@ -45,7 +43,12 @@ pub struct SyncStats {
     pub folders_created: usize,
     pub pages_created: usize,
     pub pages_updated: usize,
-    pub pages_skipped: usize,
+    /// pages that were verified as already up to date
+    pub pages_verified: usize,
+    pub pages_restored: usize,
+    pub pages_trashed: usize,
+    pub folders_restored: usize,
+    pub folders_trashed: usize,
     pub images_uploaded: usize,
     pub images_failed: usize,
     pub failures: Vec<SyncFailure>,
@@ -103,8 +106,7 @@ pub fn content_hash(content: &Value) -> String {
 // --------------------------------------------------------------- traversal
 
 /// Same ordering as the sidebar: pinned first (newest pin first), then `order`.
-/// Built-in folders are never returned; `已归档` is appended explicitly when
-/// the caller opts in.
+/// Built-in folders are never returned; `已归档` is appended explicitly.
 fn ordered_children(ws: &Workspace, parent: Option<&str>) -> Vec<Node> {
     let mut list: Vec<&Node> = ws
         .nodes
@@ -123,30 +125,31 @@ fn ordered_children(ws: &Workspace, parent: Option<&str>) -> Vec<Node> {
     list.into_iter().cloned().collect()
 }
 
-fn walk_scope(ws: &Workspace, parent: Option<&str>, include_completed: bool, out: &mut Vec<Node>) {
+fn walk_scope(ws: &Workspace, parent: Option<&str>, out: &mut Vec<Node>) {
     for node in ordered_children(ws, parent) {
         if node.id == TRASH_ID {
             continue;
         }
         out.push(node.clone());
         if node.kind == NodeKind::Folder {
-            walk_scope(ws, Some(&node.id), include_completed, out);
+            walk_scope(ws, Some(&node.id), out);
         }
     }
 
-    if parent.is_none() && include_completed {
+    if parent.is_none() {
+        // `已归档` always mirrors into its own folder page; 回收站 never does.
         if let Some(completed) = ws.nodes.iter().find(|node| node.id == COMPLETED_ID) {
             out.push(completed.clone());
-            walk_scope(ws, Some(COMPLETED_ID), include_completed, out);
+            walk_scope(ws, Some(COMPLETED_ID), out);
         }
     }
 }
 
-/// Every node a run can touch, in stable tree order. The trash root and all of
-/// its descendants are excluded; the completed root is opt-in.
-fn scope_nodes(ws: &Workspace, include_completed: bool) -> Vec<Node> {
+/// Every node a run keeps in sync, in stable tree order. The trash root and all
+/// of its descendants are excluded; the archived root is always included.
+fn scope_nodes(ws: &Workspace) -> Vec<Node> {
     let mut out = Vec::new();
-    walk_scope(ws, None, include_completed, &mut out);
+    walk_scope(ws, None, &mut out);
     out
 }
 
@@ -415,53 +418,73 @@ async fn rename_page(client: &NotionClient, page_id: &str, title: &str) -> AppRe
     Ok(())
 }
 
-/// `false` means the page no longer exists (deleted, trashed or un-shared).
-async fn remote_page_exists(client: &NotionClient, page_id: &str) -> AppResult<bool> {
+/// Three-way remote state: a trashed page is not a missing page — restoring it
+/// keeps its URL and children instead of creating a duplicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemotePage {
+    Active,
+    Trashed,
+    Missing,
+}
+
+async fn remote_page_state(client: &NotionClient, page_id: &str) -> AppResult<RemotePage> {
     match client.get(&format!("/pages/{page_id}")).await {
-        Ok(page) => Ok(!notion::page_is_archived(&page)),
-        Err(err) if err.code == "notion_not_found" => Ok(false),
+        Ok(page) => Ok(if notion::page_is_archived(&page) {
+            RemotePage::Trashed
+        } else {
+            RemotePage::Active
+        }),
+        Err(err) if err.code == "notion_not_found" => Ok(RemotePage::Missing),
         Err(err) => Err(err),
     }
 }
 
-fn target_archived_error(cfg: &notion::NotionConfig, location: Option<&Value>) -> AppError {
-    let target = if cfg.parent_page_title.trim().is_empty() {
+fn target_title(cfg: &notion::NotionConfig) -> &str {
+    if cfg.parent_page_title.trim().is_empty() {
         cfg.parent_page_id.as_str()
     } else {
         cfg.parent_page_title.as_str()
-    };
-    let title = location.map(notion::page_title).unwrap_or_default();
-    let detail = if title.trim().is_empty() {
-        String::new()
-    } else {
-        format!("（回收站中的页面：{title}）")
-    };
+    }
+}
+
+fn target_locked_error(cfg: &notion::NotionConfig) -> AppError {
     AppError::new(
-        "notion_target_archived",
+        "notion_target_locked",
         format!(
-            "Notion 同步目标页「{target}」或其父级在回收站里{detail}。请先在 Notion 里恢复对应页面及父级，或在设置里重新选择同步页面。"
+            "Notion 同步目标页「{}」仍在回收站里，自动恢复没有成功（通常是集成缺少权限）。请在 Notion 里恢复它，或在设置里重新选择同步页面。",
+            target_title(cfg)
         ),
     )
 }
 
-/// Check the target's accessible ancestry before creating any children.
+/// Check the target before creating any children. A target (or ancestor) in
+/// the Notion trash is restored instead of failing the whole run.
 async fn ensure_sync_target(client: &NotionClient, cfg: &notion::NotionConfig) -> AppResult<()> {
-    let fallback = if cfg.parent_page_title.trim().is_empty() {
-        cfg.parent_page_id.as_str()
-    } else {
-        cfg.parent_page_title.as_str()
-    };
     match client.get(&format!("/pages/{}", cfg.parent_page_id)).await {
         Ok(page) => {
-            if let Some(location) = client.archived_location(&page).await? {
-                return Err(target_archived_error(cfg, Some(&location)));
+            let Some(location) = client.archived_location(&page).await? else {
+                return Ok(());
+            };
+            let is_page = location.get("object").and_then(Value::as_str) == Some("page");
+            let id = location
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or(cfg.parent_page_id.as_str())
+                .to_string();
+            if !is_page {
+                return Err(target_locked_error(cfg));
             }
+            client
+                .restore_page(&id)
+                .await
+                .map_err(|_| target_locked_error(cfg))?;
             Ok(())
         }
         Err(err) if err.code == "notion_not_found" => Err(AppError::new(
             "notion_target_missing",
             format!(
-                "Notion 同步目标页「{fallback}」找不到。请确认页面仍存在且已分享给集成，或在设置里重新选择同步页面。"
+                "Notion 同步目标页「{}」找不到。请确认页面仍存在且已分享给集成，或在设置里重新选择同步页面。",
+                target_title(cfg)
             ),
         )),
         Err(err) => Err(err),
@@ -473,6 +496,7 @@ async fn ensure_sync_target(client: &NotionClient, cfg: &notion::NotionConfig) -
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct FolderPlan {
     create: bool,
+    restore: bool,
     rename: bool,
     move_page: bool,
 }
@@ -480,6 +504,7 @@ struct FolderPlan {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct DocPlan {
     create: bool,
+    restore: bool,
     rename: bool,
     move_page: bool,
     rewrite_body: bool,
@@ -491,7 +516,7 @@ struct DocPlan {
 
 fn plan_folder(
     link: Option<&FolderLink>,
-    remote_exists: bool,
+    remote: RemotePage,
     title: &str,
     parent_page_id: &str,
 ) -> FolderPlan {
@@ -501,7 +526,7 @@ fn plan_folder(
             ..FolderPlan::default()
         };
     };
-    if !remote_exists {
+    if remote == RemotePage::Missing {
         return FolderPlan {
             create: true,
             ..FolderPlan::default()
@@ -509,6 +534,7 @@ fn plan_folder(
     }
     FolderPlan {
         create: false,
+        restore: remote == RemotePage::Trashed,
         rename: !link.title.is_empty() && link.title != title,
         move_page: !link.parent_page_id.is_empty() && link.parent_page_id != parent_page_id,
     }
@@ -516,7 +542,7 @@ fn plan_folder(
 
 fn plan_doc(
     link: Option<&PageLink>,
-    remote_exists: bool,
+    remote: RemotePage,
     title: &str,
     parent_page_id: &str,
     local_hash: &str,
@@ -528,7 +554,7 @@ fn plan_doc(
             ..DocPlan::default()
         };
     };
-    if !link.ok || !remote_exists {
+    if remote == RemotePage::Missing {
         return DocPlan {
             create: true,
             ..DocPlan::default()
@@ -539,10 +565,13 @@ fn plan_doc(
     let legacy_changed = legacy && doc_updated_at > link.doc_updated_at;
     DocPlan {
         create: false,
+        restore: remote == RemotePage::Trashed,
         rename: !link.title.is_empty() && link.title != title,
         move_page: !link.parent_page_id.is_empty() && link.parent_page_id != parent_page_id,
-        rewrite_body: (!legacy && link.local_hash != local_hash) || legacy_changed,
-        baseline: legacy && !legacy_changed,
+        // An incomplete write is repaired on the same page instead of being
+        // replaced by a duplicate.
+        rewrite_body: !link.ok || (!legacy && link.local_hash != local_hash) || legacy_changed,
+        baseline: link.ok && legacy && !legacy_changed,
     }
 }
 
@@ -556,7 +585,6 @@ struct Ctx<'a, R: Runtime> {
     cfg: notion::NotionConfig,
     stats: SyncStats,
     uploads: ImageUploads,
-    include_completed: bool,
     done: usize,
     total: usize,
 }
@@ -575,8 +603,8 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         });
     }
 
-    /// An archived root blocks every new top-level node. Stop the run even if
-    /// the ancestor was inaccessible during preflight or trashed afterwards.
+    /// A locked root blocks every new top-level node. Other failures are
+    /// recorded against the node and the run keeps going.
     fn fail_creation(
         &mut self,
         id: &str,
@@ -584,12 +612,61 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         parent: &str,
         err: AppError,
     ) -> AppResult<()> {
-        if err.code == "notion_archived" && parent == self.cfg.parent_page_id {
-            return Err(target_archived_error(&self.cfg, None));
+        let root_blocked = parent == self.cfg.parent_page_id
+            && matches!(
+                err.code.as_str(),
+                "notion_archived" | "notion_restore_failed" | "notion_target_locked"
+            );
+        if root_blocked {
+            return Err(target_locked_error(&self.cfg));
         }
         self.fail(id, title, err.message);
         Ok(())
     }
+}
+
+/// Creates a child page, healing a parent that was trashed after its own check
+/// (a user can empty the Notion trash while a sync is running).
+async fn create_page_healing(
+    client: &NotionClient,
+    parent_page_id: &str,
+    title: &str,
+) -> AppResult<String> {
+    match create_page(client, parent_page_id, title).await {
+        Ok(id) => Ok(id),
+        Err(err) if err.code == "notion_archived" => {
+            client.restore_page(parent_page_id).await?;
+            create_page(client, parent_page_id, title).await
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn create_folder_page<R: Runtime>(
+    ctx: &mut Ctx<'_, R>,
+    folder: &Node,
+    notion_parent: &str,
+) -> AppResult<Option<String>> {
+    // A stale mapping must never make a later run skip the replacement.
+    ctx.cfg.folders.remove(&folder.id);
+    let page_id = match create_page_healing(ctx.client, notion_parent, &folder.name).await {
+        Ok(id) => id,
+        Err(err) => {
+            ctx.fail_creation(&folder.id, &folder.name, notion_parent, err)?;
+            return Ok(None);
+        }
+    };
+    ctx.cfg.folders.insert(
+        folder.id.clone(),
+        FolderLink {
+            page_id: page_id.clone(),
+            parent_page_id: notion_parent.to_string(),
+            title: folder.name.clone(),
+            in_trash: false,
+        },
+    );
+    ctx.stats.folders_created += 1;
+    Ok(Some(page_id))
 }
 
 async fn sync_folder<R: Runtime>(
@@ -598,48 +675,38 @@ async fn sync_folder<R: Runtime>(
     notion_parent: &str,
 ) -> AppResult<Option<String>> {
     let existing = ctx.cfg.folders.get(&folder.id).cloned();
-    let remote_exists = if existing.is_some() {
-        match remote_page_exists(ctx.client, &existing.as_ref().unwrap().page_id).await {
-            Ok(exists) => exists,
+    let remote = match &existing {
+        Some(link) => match remote_page_state(ctx.client, &link.page_id).await {
+            Ok(state) => state,
             Err(err) => {
                 ctx.fail(&folder.id, &folder.name, err.message);
                 return Ok(None);
             }
-        }
-    } else {
-        false
+        },
+        None => RemotePage::Missing,
     };
-    let plan = plan_folder(
-        existing.as_ref(),
-        remote_exists,
-        &folder.name,
-        notion_parent,
-    );
+    let plan = plan_folder(existing.as_ref(), remote, &folder.name, notion_parent);
 
     if plan.create {
-        // A stale mapping must never make a later run skip the replacement.
-        ctx.cfg.folders.remove(&folder.id);
-        let page_id = match create_page(ctx.client, notion_parent, &folder.name).await {
-            Ok(id) => id,
-            Err(err) => {
-                ctx.fail_creation(&folder.id, &folder.name, notion_parent, err)?;
-                return Ok(None);
-            }
-        };
-        ctx.cfg.folders.insert(
-            folder.id.clone(),
-            FolderLink {
-                page_id: page_id.clone(),
-                parent_page_id: notion_parent.to_string(),
-                title: folder.name.clone(),
-            },
-        );
-        ctx.stats.folders_created += 1;
-        return Ok(Some(page_id));
+        return create_folder_page(ctx, folder, notion_parent).await;
     }
 
     let mut link = existing.expect("non-create folder plan has a link");
     let page_id = link.page_id.clone();
+
+    if plan.restore {
+        match ctx.client.restore_page(&page_id).await {
+            Ok(()) => {
+                link.in_trash = false;
+                ctx.stats.folders_restored += 1;
+            }
+            Err(_) => {
+                // The old page cannot be brought back; recreate the folder so
+                // its subtree still mirrors locally.
+                return create_folder_page(ctx, folder, notion_parent).await;
+            }
+        }
+    }
 
     if plan.rename {
         match rename_page(ctx.client, &page_id, &folder.name).await {
@@ -675,6 +742,59 @@ async fn prepare_blocks<R: Runtime>(ctx: &mut Ctx<'_, R>, content: &Value) -> Ve
     blocks
 }
 
+async fn create_doc_page<R: Runtime>(
+    ctx: &mut Ctx<'_, R>,
+    node: &Node,
+    title: &str,
+    notion_parent: &str,
+    content: &Value,
+    local_hash: &str,
+    doc_updated_at: u64,
+) -> AppResult<()> {
+    // Drop a stale or incomplete mapping before creating its replacement.
+    ctx.cfg.pages.remove(&node.id);
+    let blocks = prepare_blocks(ctx, content).await;
+    let page_id = match create_page_healing(ctx.client, notion_parent, title).await {
+        Ok(id) => id,
+        Err(err) => {
+            ctx.fail_creation(&node.id, title, notion_parent, err)?;
+            return Ok(());
+        }
+    };
+    if let Err(err) = append_tree(ctx.client, &page_id, &blocks).await {
+        ctx.cfg.pages.insert(
+            node.id.clone(),
+            PageLink {
+                page_id,
+                parent_page_id: notion_parent.to_string(),
+                title: title.to_string(),
+                doc_updated_at: 0,
+                synced_at: now_ms(),
+                ok: false,
+                local_hash: String::new(),
+                in_trash: false,
+            },
+        );
+        ctx.fail(&node.id, title, err.message);
+        return Ok(());
+    }
+    ctx.cfg.pages.insert(
+        node.id.clone(),
+        PageLink {
+            page_id,
+            parent_page_id: notion_parent.to_string(),
+            title: title.to_string(),
+            doc_updated_at,
+            synced_at: now_ms(),
+            ok: true,
+            local_hash: local_hash.to_string(),
+            in_trash: false,
+        },
+    );
+    ctx.stats.pages_created += 1;
+    Ok(())
+}
+
 async fn sync_doc<R: Runtime>(
     ctx: &mut Ctx<'_, R>,
     node: &Node,
@@ -702,20 +822,19 @@ async fn sync_doc<R: Runtime>(
     };
     let local_hash = content_hash(&doc.content);
     let existing = ctx.cfg.pages.get(&node.id).cloned();
-    let remote_exists = if existing.is_some() {
-        match remote_page_exists(ctx.client, &existing.as_ref().unwrap().page_id).await {
-            Ok(exists) => exists,
+    let remote = match &existing {
+        Some(link) => match remote_page_state(ctx.client, &link.page_id).await {
+            Ok(state) => state,
             Err(err) => {
                 ctx.fail(&node.id, &effective_title, err.message);
                 return Ok(());
             }
-        }
-    } else {
-        false
+        },
+        None => RemotePage::Missing,
     };
     let plan = plan_doc(
         existing.as_ref(),
-        remote_exists,
+        remote,
         &effective_title,
         notion_parent,
         &local_hash,
@@ -723,51 +842,45 @@ async fn sync_doc<R: Runtime>(
     );
 
     if plan.create {
-        // Drop a stale or incomplete mapping before creating its replacement.
-        ctx.cfg.pages.remove(&node.id);
-        let blocks = prepare_blocks(ctx, &doc.content).await;
-        let page_id = match create_page(ctx.client, notion_parent, &effective_title).await {
-            Ok(id) => id,
-            Err(err) => {
-                ctx.fail_creation(&node.id, &effective_title, notion_parent, err)?;
-                return Ok(());
-            }
-        };
-        if let Err(err) = append_tree(ctx.client, &page_id, &blocks).await {
-            ctx.cfg.pages.insert(
-                node.id.clone(),
-                PageLink {
-                    page_id,
-                    parent_page_id: notion_parent.to_string(),
-                    title: effective_title.clone(),
-                    doc_updated_at: 0,
-                    synced_at: now_ms(),
-                    ok: false,
-                    local_hash: String::new(),
-                },
-            );
-            ctx.fail(&node.id, &effective_title, err.message);
-            return Ok(());
-        }
-        ctx.cfg.pages.insert(
-            node.id.clone(),
-            PageLink {
-                page_id,
-                parent_page_id: notion_parent.to_string(),
-                title: effective_title.clone(),
-                doc_updated_at: doc.updated_at,
-                synced_at: now_ms(),
-                ok: true,
-                local_hash,
-            },
-        );
-        ctx.stats.pages_created += 1;
-        return Ok(());
+        return create_doc_page(
+            ctx,
+            node,
+            &effective_title,
+            notion_parent,
+            &doc.content,
+            &local_hash,
+            doc.updated_at,
+        )
+        .await;
     }
 
     let mut link = existing.expect("non-create document plan has a link");
     let page_id = link.page_id.clone();
     let mut changed = false;
+    let mut restored = false;
+
+    // A page sitting in the Notion trash is restored in place so its URL and
+    // children survive; only an unrestorable page is replaced.
+    if plan.restore {
+        match ctx.client.restore_page(&page_id).await {
+            Ok(()) => {
+                link.in_trash = false;
+                restored = true;
+            }
+            Err(_) => {
+                return create_doc_page(
+                    ctx,
+                    node,
+                    &effective_title,
+                    notion_parent,
+                    &doc.content,
+                    &local_hash,
+                    doc.updated_at,
+                )
+                .await;
+            }
+        }
+    }
 
     if plan.rename {
         match rename_page(ctx.client, &page_id, &effective_title).await {
@@ -801,6 +914,7 @@ async fn sync_doc<R: Runtime>(
                 link.local_hash = local_hash;
                 link.doc_updated_at = doc.updated_at;
                 link.ok = true;
+                link.in_trash = false;
                 changed = true;
             }
             Err(err) => {
@@ -826,8 +940,11 @@ async fn sync_doc<R: Runtime>(
     if changed {
         link.synced_at = now_ms();
         ctx.stats.pages_updated += 1;
+    } else if restored {
+        link.synced_at = now_ms();
+        ctx.stats.pages_restored += 1;
     } else {
-        ctx.stats.pages_skipped += 1;
+        ctx.stats.pages_verified += 1;
     }
     ctx.cfg.pages.insert(node.id.clone(), link);
     Ok(())
@@ -857,24 +974,148 @@ async fn sync_tree<R: Runtime>(ctx: &mut Ctx<'_, R>) -> AppResult<()> {
 
         if ws_parent.is_none() {
             // `ordered_children` deliberately omits built-in system folders.
-            // The completed subtree is included only when the user opts in.
-            // Trash is never queued, so none of its descendants are touched.
-            if ctx.include_completed {
-                if let Some(completed) = ctx
-                    .ws
-                    .nodes
-                    .iter()
-                    .find(|node| node.id == COMPLETED_ID)
-                    .cloned()
-                {
-                    if seen_folders.insert(completed.id.clone()) {
-                        if let Some(page_id) = sync_folder(ctx, &completed, &notion_parent).await? {
-                            queue.push((page_id, Some(completed.id.clone())));
-                        }
+            // 已归档 always mirrors into its own folder page; 回收站 is never
+            // queued, so none of its descendants are touched here (the cleanup
+            // pass trashes their mapped pages instead).
+            if let Some(completed) = ctx
+                .ws
+                .nodes
+                .iter()
+                .find(|node| node.id == COMPLETED_ID)
+                .cloned()
+            {
+                if seen_folders.insert(completed.id.clone()) {
+                    if let Some(page_id) = sync_folder(ctx, &completed, &notion_parent).await? {
+                        queue.push((page_id, Some(completed.id.clone())));
                     }
-                    ctx.tick("folders", &completed.name);
                 }
+                ctx.tick("folders", &completed.name);
             }
+        }
+    }
+    Ok(())
+}
+
+/// Moves pages of deleted or trashed local nodes to the Notion trash.
+///
+/// Nodes that still exist in 回收站 keep their mapping (flagged `in_trash`) so
+/// restoring them later reuses the same Notion page. Purged nodes lose theirs.
+async fn cleanup_removed<R: Runtime>(
+    ctx: &mut Ctx<'_, R>,
+    scope: &HashSet<String>,
+) -> AppResult<()> {
+    let docs: Vec<(String, PageLink)> = ctx
+        .cfg
+        .pages
+        .iter()
+        .filter(|(id, _)| !scope.contains(id.as_str()))
+        .map(|(id, link)| (id.clone(), link.clone()))
+        .collect();
+    for (id, mut link) in docs {
+        let node = ctx.ws.nodes.iter().find(|node| node.id == id);
+        let Some(node) = node else {
+            // Permanently deleted: archive the page and forget the mapping.
+            if !link.in_trash {
+                emit(ctx.app, "cleanup", ctx.done, ctx.total, &link.title);
+                if let Err(err) = ctx.client.set_page_trashed(&link.page_id, true).await {
+                    ctx.fail(&id, &link.title, err.message);
+                    continue;
+                }
+                ctx.stats.pages_trashed += 1;
+            }
+            ctx.cfg.pages.remove(&id);
+            continue;
+        };
+        let title = if node.name.trim().is_empty() {
+            link.title.clone()
+        } else {
+            node.name.clone()
+        };
+        if !workspace::in_trash(&ctx.ws.nodes, &node.id) {
+            // Outside the scope for an unexpected reason: never archive blindly.
+            continue;
+        }
+        if link.in_trash {
+            // Already trashed by a previous run, but its page may have been
+            // restored by hand in Notion; the local trash still wins.
+            match remote_page_state(ctx.client, &link.page_id).await {
+                Ok(RemotePage::Active) => {
+                    emit(ctx.app, "cleanup", ctx.done, ctx.total, &title);
+                    if let Err(err) = ctx.client.set_page_trashed(&link.page_id, true).await {
+                        ctx.fail(&id, &title, err.message);
+                    } else {
+                        ctx.stats.pages_trashed += 1;
+                    }
+                }
+                Ok(_) => {}
+                Err(err) => ctx.fail(&id, &title, err.message),
+            }
+            continue;
+        }
+        emit(ctx.app, "cleanup", ctx.done, ctx.total, &title);
+        match ctx.client.set_page_trashed(&link.page_id, true).await {
+            Ok(()) => {
+                link.in_trash = true;
+                link.synced_at = now_ms();
+                ctx.cfg.pages.insert(id, link);
+                ctx.stats.pages_trashed += 1;
+            }
+            Err(err) => ctx.fail(&id, &title, err.message),
+        }
+    }
+
+    let folders: Vec<(String, FolderLink)> = ctx
+        .cfg
+        .folders
+        .iter()
+        .filter(|(id, _)| !scope.contains(id.as_str()))
+        .map(|(id, link)| (id.clone(), link.clone()))
+        .collect();
+    for (id, mut link) in folders {
+        let node = ctx.ws.nodes.iter().find(|node| node.id == id);
+        let Some(node) = node else {
+            if !link.in_trash {
+                emit(ctx.app, "cleanup", ctx.done, ctx.total, &link.title);
+                if let Err(err) = ctx.client.set_page_trashed(&link.page_id, true).await {
+                    ctx.fail(&id, &link.title, err.message);
+                    continue;
+                }
+                ctx.stats.folders_trashed += 1;
+            }
+            ctx.cfg.folders.remove(&id);
+            continue;
+        };
+        let title = if node.name.trim().is_empty() {
+            link.title.clone()
+        } else {
+            node.name.clone()
+        };
+        if !workspace::in_trash(&ctx.ws.nodes, &node.id) {
+            continue;
+        }
+        if link.in_trash {
+            match remote_page_state(ctx.client, &link.page_id).await {
+                Ok(RemotePage::Active) => {
+                    emit(ctx.app, "cleanup", ctx.done, ctx.total, &title);
+                    if let Err(err) = ctx.client.set_page_trashed(&link.page_id, true).await {
+                        ctx.fail(&id, &title, err.message);
+                    } else {
+                        ctx.stats.folders_trashed += 1;
+                    }
+                }
+                Ok(_) => {}
+                Err(err) => ctx.fail(&id, &title, err.message),
+            }
+            continue;
+        }
+        emit(ctx.app, "cleanup", ctx.done, ctx.total, &title);
+        match ctx.client.set_page_trashed(&link.page_id, true).await {
+            Ok(()) => {
+                link.in_trash = true;
+                ctx.cfg.folders.insert(id, link);
+                ctx.stats.folders_trashed += 1;
+            }
+            Err(err) => ctx.fail(&id, &title, err.message),
         }
     }
     Ok(())
@@ -902,12 +1143,11 @@ async fn build_ctx<'a, R: Runtime>(
     app: &'a AppHandle<R>,
     client: &'a NotionClient,
     paths: &'a Paths,
-    options: SyncOptions,
 ) -> AppResult<Ctx<'a, R>> {
     let cfg = notion::snapshot(app);
     validate(&cfg)?;
     let ws = workspace::load_shared(paths).await?.as_ref().clone();
-    let total = scope_nodes(&ws, options.include_completed).len();
+    let total = scope_nodes(&ws).len();
     Ok(Ctx {
         app,
         client,
@@ -916,24 +1156,28 @@ async fn build_ctx<'a, R: Runtime>(
         cfg,
         stats: SyncStats::default(),
         uploads: ImageUploads::new(),
-        include_completed: options.include_completed,
         done: 0,
         total,
     })
 }
 
 #[tauri::command]
-pub async fn notion_sync_docs<R: Runtime>(
-    app: AppHandle<R>,
-    options: SyncOptions,
-) -> AppResult<SyncStats> {
+pub async fn notion_sync_docs<R: Runtime>(app: AppHandle<R>) -> AppResult<SyncStats> {
     let client = NotionClient::from_app(&app)?;
     let paths = Paths::new(workspace_root(&app)?);
     paths.ensure_dirs().await?;
-    let mut ctx = build_ctx(&app, &client, &paths, options).await?;
+    let mut ctx = build_ctx(&app, &client, &paths).await?;
     ensure_sync_target(&client, &ctx.cfg).await?;
+    let scope: HashSet<String> = scope_nodes(&ctx.ws)
+        .into_iter()
+        .map(|node| node.id)
+        .collect();
     emit(&app, "folders", 0, ctx.total, "");
-    let outcome = sync_tree(&mut ctx).await;
+    let outcome = async {
+        sync_tree(&mut ctx).await?;
+        cleanup_removed(&mut ctx, &scope).await
+    }
+    .await;
     // Keep successful mappings even when a later write discovers a blocked
     // target, so retrying after recovery does not duplicate earlier pages.
     let stats = finish(ctx).await?;
@@ -956,7 +1200,12 @@ async fn finish<R: Runtime>(mut ctx: Ctx<'_, R>) -> AppResult<SyncStats> {
     emit(
         ctx.app,
         "done",
-        stats.pages_created + stats.pages_updated + stats.pages_skipped,
+        stats.pages_created
+            + stats.pages_updated
+            + stats.pages_restored
+            + stats.pages_verified
+            + stats.pages_trashed
+            + stats.folders_trashed,
         ctx.total,
         "",
     );
@@ -976,6 +1225,7 @@ mod tests {
             synced_at: 10,
             ok: true,
             local_hash: hash.to_string(),
+            in_trash: false,
         }
     }
 
@@ -992,39 +1242,74 @@ mod tests {
         let link = doc_link("Title", "parent-a", "hash-a");
 
         assert_eq!(
-            plan_doc(None, false, "Title", "parent-a", "hash-a", 10),
+            plan_doc(None, RemotePage::Missing, "Title", "parent-a", "hash-a", 10),
             DocPlan {
                 create: true,
                 ..DocPlan::default()
             }
         );
         assert_eq!(
-            plan_doc(Some(&link), true, "Title", "parent-a", "hash-a", 10),
+            plan_doc(
+                Some(&link),
+                RemotePage::Active,
+                "Title",
+                "parent-a",
+                "hash-a",
+                10
+            ),
             DocPlan::default()
         );
         assert_eq!(
-            plan_doc(Some(&link), true, "Title", "parent-a", "hash-b", 20),
+            plan_doc(
+                Some(&link),
+                RemotePage::Active,
+                "Title",
+                "parent-a",
+                "hash-b",
+                20
+            ),
             DocPlan {
                 rewrite_body: true,
                 ..DocPlan::default()
             }
         );
         assert_eq!(
-            plan_doc(Some(&link), true, "Renamed", "parent-a", "hash-a", 10),
+            plan_doc(
+                Some(&link),
+                RemotePage::Active,
+                "Renamed",
+                "parent-a",
+                "hash-a",
+                10
+            ),
             DocPlan {
                 rename: true,
                 ..DocPlan::default()
             }
         );
         assert_eq!(
-            plan_doc(Some(&link), true, "Title", "parent-b", "hash-a", 10),
+            plan_doc(
+                Some(&link),
+                RemotePage::Active,
+                "Title",
+                "parent-b",
+                "hash-a",
+                10
+            ),
             DocPlan {
                 move_page: true,
                 ..DocPlan::default()
             }
         );
         assert_eq!(
-            plan_doc(Some(&link), true, "Renamed", "parent-b", "hash-b", 20),
+            plan_doc(
+                Some(&link),
+                RemotePage::Active,
+                "Renamed",
+                "parent-b",
+                "hash-b",
+                20
+            ),
             DocPlan {
                 rename: true,
                 move_page: true,
@@ -1035,11 +1320,70 @@ mod tests {
     }
 
     #[test]
-    fn document_plan_recreates_incomplete_or_missing_pages() {
+    fn document_plan_restores_trashed_pages_in_place() {
+        let link = doc_link("Title", "parent-a", "hash-a");
+        assert_eq!(
+            plan_doc(
+                Some(&link),
+                RemotePage::Trashed,
+                "Title",
+                "parent-a",
+                "hash-a",
+                10
+            ),
+            DocPlan {
+                restore: true,
+                ..DocPlan::default()
+            }
+        );
+        // A restored page with local edits is restored *and* rewritten.
+        assert_eq!(
+            plan_doc(
+                Some(&link),
+                RemotePage::Trashed,
+                "Title",
+                "parent-a",
+                "hash-b",
+                20
+            ),
+            DocPlan {
+                restore: true,
+                rewrite_body: true,
+                ..DocPlan::default()
+            }
+        );
+    }
+
+    #[test]
+    fn document_plan_recreates_only_missing_pages_and_repairs_incomplete_ones() {
         let mut link = doc_link("Title", "parent-a", "hash-a");
         link.ok = false;
-        assert!(plan_doc(Some(&link), true, "Title", "parent-a", "hash-a", 10).create);
-        assert!(plan_doc(Some(&link), false, "Title", "parent-a", "hash-a", 10).create);
+        // An incomplete write is repaired on the same page, not duplicated.
+        assert_eq!(
+            plan_doc(
+                Some(&link),
+                RemotePage::Active,
+                "Title",
+                "parent-a",
+                "hash-a",
+                10
+            ),
+            DocPlan {
+                rewrite_body: true,
+                ..DocPlan::default()
+            }
+        );
+        assert!(
+            plan_doc(
+                Some(&link),
+                RemotePage::Missing,
+                "Title",
+                "parent-a",
+                "hash-a",
+                10
+            )
+            .create
+        );
     }
 
     #[test]
@@ -1047,13 +1391,30 @@ mod tests {
         let mut link = doc_link("", "", "");
         link.doc_updated_at = 10;
         assert_eq!(
-            plan_doc(Some(&link), true, "Title", "parent-a", "hash-a", 10),
+            plan_doc(
+                Some(&link),
+                RemotePage::Active,
+                "Title",
+                "parent-a",
+                "hash-a",
+                10
+            ),
             DocPlan {
                 baseline: true,
                 ..DocPlan::default()
             }
         );
-        assert!(plan_doc(Some(&link), true, "Title", "parent-a", "hash-a", 11).rewrite_body);
+        assert!(
+            plan_doc(
+                Some(&link),
+                RemotePage::Active,
+                "Title",
+                "parent-a",
+                "hash-a",
+                11
+            )
+            .rewrite_body
+        );
     }
 
     fn workspace() -> Workspace {
@@ -1105,43 +1466,47 @@ mod tests {
     }
 
     #[test]
-    fn scope_excludes_trash_and_makes_archive_optional() {
+    fn scope_always_includes_archive_and_excludes_trash() {
         let ws = workspace();
-        let active: Vec<String> = scope_nodes(&ws, false)
-            .into_iter()
-            .map(|node| node.id)
-            .collect();
-        assert_eq!(active, vec!["d_active"]);
-        assert_eq!(scope_nodes(&ws, true).len(), 3);
-        assert!(scope_nodes(&ws, true)
-            .iter()
-            .any(|node| node.id == "d_archived"));
-        assert!(!scope_nodes(&ws, true)
-            .iter()
-            .any(|node| node.id == "d_trashed"));
+        let ids: Vec<String> = scope_nodes(&ws).into_iter().map(|node| node.id).collect();
+        assert!(ids.contains(&"d_active".to_string()));
+        assert!(ids.contains(&COMPLETED_ID.to_string()));
+        assert!(ids.contains(&"d_archived".to_string()));
+        assert!(!ids.contains(&"d_trashed".to_string()));
+        assert!(!ids.contains(&TRASH_ID.to_string()));
+        // active note, archived folder, archived note
+        assert_eq!(ids.len(), 3);
     }
 
     #[test]
-    fn folder_plans_cover_create_skip_rename_and_move() {
+    fn folder_plans_cover_create_skip_rename_move_and_restore() {
         let link = FolderLink {
             page_id: "folder-page".to_string(),
             parent_page_id: "root".to_string(),
             title: "Folder".to_string(),
+            in_trash: false,
         };
-        assert!(plan_folder(None, false, "Folder", "root").create);
+        assert!(plan_folder(None, RemotePage::Missing, "Folder", "root").create);
         assert_eq!(
-            plan_folder(Some(&link), true, "Folder", "root"),
+            plan_folder(Some(&link), RemotePage::Active, "Folder", "root"),
             FolderPlan::default()
         );
         assert_eq!(
-            plan_folder(Some(&link), true, "Renamed", "root"),
+            plan_folder(Some(&link), RemotePage::Trashed, "Folder", "root"),
+            FolderPlan {
+                restore: true,
+                ..FolderPlan::default()
+            }
+        );
+        assert_eq!(
+            plan_folder(Some(&link), RemotePage::Active, "Renamed", "root"),
             FolderPlan {
                 rename: true,
                 ..FolderPlan::default()
             }
         );
         assert_eq!(
-            plan_folder(Some(&link), true, "Folder", "other"),
+            plan_folder(Some(&link), RemotePage::Active, "Folder", "other"),
             FolderPlan {
                 move_page: true,
                 ..FolderPlan::default()

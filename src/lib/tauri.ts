@@ -215,10 +215,6 @@ export interface NotionParent {
   state: NotionState;
 }
 
-export interface NotionSyncOptions {
-  includeCompleted: boolean;
-}
-
 export interface NotionSyncFailure {
   docId: string;
   title: string;
@@ -229,7 +225,11 @@ export interface NotionSyncStats {
   foldersCreated: number;
   pagesCreated: number;
   pagesUpdated: number;
-  pagesSkipped: number;
+  pagesVerified: number;
+  pagesRestored: number;
+  pagesTrashed: number;
+  foldersRestored: number;
+  foldersTrashed: number;
   imagesUploaded: number;
   imagesFailed: number;
   failures: NotionSyncFailure[];
@@ -507,8 +507,7 @@ export const api = {
   notionConnect: (token: string) => invoke<NotionConnection>("notion_connect", { token }),
   notionDisconnect: () => invoke<NotionState>("notion_disconnect"),
   notionSetParent: (target: string) => invoke<NotionParent>("notion_set_parent", { target }),
-  notionSync: (options: NotionSyncOptions) =>
-    invoke<NotionSyncStats>("notion_sync_docs", { options }),
+  notionSync: () => invoke<NotionSyncStats>("notion_sync_docs"),
   /**
    * Newest GitHub release, compared with this build.
    *
