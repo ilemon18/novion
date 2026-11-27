@@ -32,7 +32,9 @@ Write offline, no account needed. Plain JSON files you own.
 Keep notes in sync across Macs with iCloud Drive.
 
 ### Notion sync
-A one-way mirror from Novion to Notion: local folders and notes are authoritative, archived notes live in their own folder page, and notes moved to Trash are removed from Notion.
+A one-way mirror from Novion to Notion: local folders and notes are authoritative, archived notes live in their own folder page, and notes deleted locally are removed from Notion. If the sync target is moved to the Notion trash it is restored automatically; when that is impossible a replacement page is created and everything is pushed again. A force push rewrites every page from Novion.
+
+See [docs/notion.md](docs/notion.md) for the mirror rules and recovery behavior.
 
 ### LAN sharing
 Share a workspace with another Novion on the same network. The host keeps the files; the connected computer edits them directly over a paired, TLS-protected connection. Off by default.

@@ -85,9 +85,20 @@ export function NotionSection() {
     }
   };
 
-  const startSync = async () => {
+  const startSync = async (force = false) => {
     setNotice(null);
-    await sync();
+    const stats = await sync(force);
+    if (!stats) return;
+    if (stats.rootRecreated) {
+      setNotice(
+        t(
+          "The Notion target was missing or in the trash, so a new page “{title}” was created and everything was synced to it.",
+          { title: stats.rootTitle },
+        ),
+      );
+    } else if (stats.rootRestored) {
+      setNotice(t("The sync target was restored from the Notion trash."));
+    }
   };
 
   return (
@@ -312,7 +323,26 @@ export function NotionSection() {
             </div>
           </div>
         ) : (
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex justify-end gap-2">
+            <Button
+              size="md"
+              variant="outline"
+              disabled={!connected || !hasParent}
+              onClick={() =>
+                askConfirm({
+                  title: t("Force push everything?"),
+                  description: t(
+                    "Every page will be renamed, moved and rewritten from Novion. Edits made in Notion will be overwritten. This can take a while.",
+                  ),
+                  confirmLabel: t("Force push"),
+                  onConfirm: () => {
+                    void startSync(true);
+                  },
+                })
+              }
+            >
+              {t("Force push")}
+            </Button>
             <Button
               size="md"
               variant="default"

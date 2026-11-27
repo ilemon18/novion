@@ -22,7 +22,7 @@ interface NotionStore {
   connect: (token: string) => Promise<boolean>;
   disconnect: () => Promise<void>;
   setParent: (target: string) => Promise<{ reset: boolean; title: string } | null>;
-  sync: () => Promise<NotionSyncStats | null>;
+  sync: (force?: boolean) => Promise<NotionSyncStats | null>;
   clearError: () => void;
   resetStats: () => void;
 }
@@ -89,12 +89,12 @@ export const useNotion = create<NotionStore>((set, get) => ({
     }
   },
 
-  sync: async () => {
+  sync: async (force = false) => {
     set({ syncing: true, progress: null, error: null, lastStats: null });
     try {
       // never push a stale snapshot: finish pending autosaves first
       await saveQueue.flushAll();
-      const stats = await api.notionSync();
+      const stats = await api.notionSync(force);
       const info = await api.notionGetState();
       set({ syncing: false, progress: null, lastStats: stats, info });
 
@@ -103,10 +103,12 @@ export const useNotion = create<NotionStore>((set, get) => ({
       // It is language-independent, unlike matching on the message text.
       const attempted =
         stats.foldersCreated +
+        stats.foldersRestored +
         stats.pagesCreated +
         stats.pagesUpdated +
         stats.pagesRestored +
-        stats.pagesTrashed;
+        stats.pagesTrashed +
+        stats.foldersTrashed;
       if (attempted === 0 && stats.failures.length > 0) {
         set({ error: stats.failures[0].message });
       }

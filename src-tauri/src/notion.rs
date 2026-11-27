@@ -106,6 +106,11 @@ pub struct NotionConfig {
     pub bot_name: String,
     pub parent_page_id: String,
     pub parent_page_title: String,
+    /// Parent page of the sync target, captured when the target is chosen.
+    /// Kept so a target that was permanently deleted can be re-created in the
+    /// same place instead of falling back to the workspace root.
+    #[serde(default)]
+    pub parent_page_parent_id: String,
     /// Novion doc id → Notion page
     pub pages: HashMap<String, PageLink>,
     /// Novion folder id → synced Notion folder page
@@ -123,6 +128,7 @@ impl Default for NotionConfig {
             bot_name: String::new(),
             parent_page_id: String::new(),
             parent_page_title: String::new(),
+            parent_page_parent_id: String::new(),
             pages: HashMap::new(),
             folders: HashMap::new(),
             last_sync_at: 0,
@@ -218,6 +224,18 @@ async fn throttle() {
     if !wait.is_zero() {
         tokio::time::sleep(wait).await;
     }
+}
+
+/// Result of healing a page and its accessible ancestors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HealOutcome {
+    /// The page and every accessible ancestor are usable.
+    Healthy,
+    /// At least one archived ancestor was restored.
+    Restored,
+    /// The trash cannot be healed from here (database/block parent, missing
+    /// page, or the integration may not update the page).
+    Unrecoverable(String),
 }
 
 pub struct NotionClient {
@@ -400,6 +418,76 @@ impl NotionClient {
             NOTION_MOVE_VERSION,
         )
         .await
+    }
+
+    /// Creates a new page under an explicit Notion parent.
+    ///
+    /// `parent` is the raw API object: `{"type":"page_id","page_id":...}` for a
+    /// child page or `{"type":"workspace","workspace":true}` for a top-level
+    /// page. Used when a sync target has to be rebuilt in place.
+    pub async fn create_page_in(&self, parent: Value, title: &str) -> AppResult<String> {
+        let page = self
+            .post(
+                "/pages",
+                json!({
+                    "parent": parent,
+                    "properties": { "title": title_property(title) }
+                }),
+            )
+            .await?;
+        page.get("id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| {
+                AppError::new(
+                    "notion_create_failed",
+                    "Notion did not return the new page id",
+                )
+            })
+    }
+
+    /// Restores a page and every archived accessible ancestor.
+    ///
+    /// `archived_location` reports the top-most trashed object in the chain;
+    /// restoring that object unblocks the whole subtree. Network errors and
+    /// authorization failures are propagated so a transient failure never
+    /// triggers a duplicate rebuild.
+    pub async fn heal_page_chain(&self, page_id: &str) -> AppResult<HealOutcome> {
+        let page = match self.get(&format!("/pages/{page_id}")).await {
+            Ok(page) => page,
+            Err(err) if err.code == "notion_not_found" => {
+                return Ok(HealOutcome::Unrecoverable(
+                    "the page no longer exists".to_string(),
+                ));
+            }
+            Err(err) => return Err(err),
+        };
+        let location = match self.archived_location(&page).await {
+            Ok(location) => location,
+            Err(err) if err.code == "notion_invalid_parent_chain" => {
+                return Ok(HealOutcome::Unrecoverable(err.message));
+            }
+            Err(err) => return Err(err),
+        };
+        let Some(location) = location else {
+            return Ok(HealOutcome::Healthy);
+        };
+        if location.get("object").and_then(Value::as_str) != Some("page") {
+            return Ok(HealOutcome::Unrecoverable(
+                "a trashed database or block sits above this page".to_string(),
+            ));
+        }
+        let id = location
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or(page_id);
+        match self.restore_page(id).await {
+            Ok(()) => Ok(HealOutcome::Restored),
+            Err(err) if err.code == "notion_restore_failed" => {
+                Ok(HealOutcome::Unrecoverable(err.message))
+            }
+            Err(err) => Err(err),
+        }
     }
 
     /// Moves a page into (or out of) the Notion trash.
@@ -817,6 +905,7 @@ pub async fn notion_connect<R: Runtime>(
         // a new token may point at a totally different integration
         cfg.parent_page_id.clear();
         cfg.parent_page_title.clear();
+        cfg.parent_page_parent_id.clear();
         cfg.pages.clear();
         cfg.folders.clear();
     }
@@ -870,6 +959,21 @@ pub async fn notion_set_parent<R: Runtime>(
             "这是一个数据库，不是页面：请选择普通页面作为同步目标",
         ));
     }
+    if client.archived_location(&page).await?.is_some() {
+        return Err(AppError::new(
+            "notion_target_in_trash",
+            "这个页面或其父级在回收站里：请先在 Notion 里恢复它及父级，或直接选择父级页面",
+        ));
+    }
+    let parent_parent_id =
+        if page.pointer("/parent/type").and_then(Value::as_str) == Some("page_id") {
+            page.pointer("/parent/page_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string()
+        } else {
+            String::new()
+        };
     let title = {
         let title = page_title(&page);
         if title.trim().is_empty() {
@@ -887,6 +991,7 @@ pub async fn notion_set_parent<R: Runtime>(
     }
     cfg.parent_page_id = id.clone();
     cfg.parent_page_title = title.clone();
+    cfg.parent_page_parent_id = parent_parent_id;
     save(&app, &cfg).await?;
     remember(&app, &cfg);
 

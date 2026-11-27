@@ -47,9 +47,13 @@ export const ERROR_MESSAGES: Record<string, string> = {
   notion_upload: "The file could not be uploaded to Notion.",
   notion_append_failed: "The block content could not be written to Notion.",
   notion_bad_target: "That is not a page that can be used as a sync target.",
+  notion_target_in_trash:
+    "That page or one of its parents is in the Notion trash. Restore it in Notion, or choose the parent page instead.",
   notion_restore_failed: "A page in the Notion trash could not be restored.",
   notion_target_locked:
-    "The sync target is still in the Notion trash and could not be restored automatically. Restore it in Notion or choose another page.",
+    "The sync target is still in the Notion trash and could not be restored during this run. Restore it in Notion or choose another page.",
+  notion_target_unrecoverable:
+    "The sync target is in the Notion trash and could not be restored or re-created. Restore it and its parents in Notion, grant the integration Update and Insert permissions, or choose another sync page.",
 
   update_network: "Could not reach GitHub. Check your connection and try again.",
   update_rate_limited: "GitHub is limiting update checks right now. Try again later.",

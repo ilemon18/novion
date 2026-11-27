@@ -235,6 +235,12 @@ export interface NotionSyncStats {
   failures: NotionSyncFailure[];
   lastSyncAt: number;
   parentUrl: string;
+  /** the configured target was restored from the Notion trash this run */
+  rootRestored: boolean;
+  /** the target was missing/unrestorable and a replacement was created */
+  rootRecreated: boolean;
+  /** title of the replacement target page */
+  rootTitle: string;
 }
 
 export interface CreatedDoc {
@@ -507,7 +513,7 @@ export const api = {
   notionConnect: (token: string) => invoke<NotionConnection>("notion_connect", { token }),
   notionDisconnect: () => invoke<NotionState>("notion_disconnect"),
   notionSetParent: (target: string) => invoke<NotionParent>("notion_set_parent", { target }),
-  notionSync: () => invoke<NotionSyncStats>("notion_sync_docs"),
+  notionSync: (force = false) => invoke<NotionSyncStats>("notion_sync_docs", { force }),
   /**
    * Newest GitHub release, compared with this build.
    *

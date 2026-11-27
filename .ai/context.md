@@ -37,7 +37,7 @@
 | **Workspace ops** | `src-tauri/src/workspace.rs` (workspace.json CRUD; per-root async write lock for local + remote mutations) |
 | **Doc ops** | `src-tauri/src/docs.rs` (read/save document files) |
 | **Asset ops** | `src-tauri/src/assets.rs` (save/delete images) |
-| **Notion sync** | `src-tauri/src/notion.rs` (token, HTTP, errors), `notion_blocks.rs` (TipTap → Notion), `notion_sync.rs` (one-way Novion → Notion mirror: incremental body push, trash propagation, restore-in-place, 已归档 folder) |
+| **Notion sync** | `src-tauri/src/notion.rs` (token, HTTP, errors), `notion_blocks.rs` (TipTap → Notion), `notion_sync.rs` (one-way Novion → Notion mirror: incremental/forced body push, trash propagation, self-healing sync root, 已归档 folder) |
 | **Notion UI** | `src/components/settings/NotionSection.tsx`, `src/store/notion.ts` |
 | **MCP server** | `src-tauri/src/mcp.rs` (9 tools, Streamable HTTP, bearer auth), `src-tauri/src/config.rs` (`mcpPort` / `mcpToken`), `src/components/settings/McpSection.tsx`, `src/lib/tauri.ts` |
 | **LAN sharing** | `src-tauri/src/remote/` — `mod.rs` (commands, session, pairing lifecycle), `store.rs` (config, token hashes, CA/cert), `server.rs` (HTTPS routes, RPC dispatch), `client.rs` (pair/hello/pinned RPC), `discovery.rs` (mDNS), `asset_proxy.rs` (client image proxy); `src/store/remote.ts`, `src/components/settings/SharingSection.tsx`, `src/lib/tauri.ts` |
