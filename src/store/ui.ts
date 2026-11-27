@@ -12,24 +12,6 @@ export type SettingsSection =
   | "notion"
   | "about";
 
-/** Colour scheme layered on top of the light/dark mode. */
-export type PaletteId =
-  | "white"
-  | "paper"
-  | "catppuccin"
-  | "github"
-  | "rose-pine"
-  | "gruvbox";
-
-export const PALETTE_IDS: PaletteId[] = [
-  "white",
-  "paper",
-  "catppuccin",
-  "github",
-  "rose-pine",
-  "gruvbox",
-];
-
 /** Built-in typefaces; the whole interface and the document both use them. */
 export type DocFontId = "system" | "inter" | "serif" | "mono";
 
@@ -55,9 +37,9 @@ export const DOC_FONT_STACKS: Record<DocFontId, string> = {
 
 const THEME_KEY = "novion:theme";
 const LOCALE_KEY = "novion:locale";
-const PALETTE_KEY = "novion:palette";
-const PALETTE_VERSION_KEY = "novion:palette-version";
-const PALETTE_VERSION = "1";
+/* Removed in the single-theme release; cleaned once when the store loads. */
+const LEGACY_PALETTE_KEY = "novion:palette";
+const LEGACY_PALETTE_VERSION_KEY = "novion:palette-version";
 const FEATURES_KEY = "novion:features";
 const WIDTH_KEY = "novion:sidebar-width";
 const SIDEBAR_OPEN_KEY = "novion:sidebar-open";
@@ -74,6 +56,17 @@ export const FONT_SIZE_DEFAULT = 15;
 /** the default shipped before v3; see the migration note in `readFontSize` */
 const FONT_SIZE_PREVIOUS_DEFAULT = 14;
 
+function removeLegacyPalettePreference() {
+  try {
+    localStorage.removeItem(LEGACY_PALETTE_KEY);
+    localStorage.removeItem(LEGACY_PALETTE_VERSION_KEY);
+  } catch {
+    /* storage can be unavailable in hardened webviews; no theme depends on it */
+  }
+}
+
+removeLegacyPalettePreference();
+
 function readTheme(): ThemeMode {
   const v = localStorage.getItem(THEME_KEY);
   return v === "light" || v === "dark" || v === "system" ? v : "system";
@@ -86,28 +79,6 @@ function readTheme(): ThemeMode {
 function readLocale(): Locale {
   const v = localStorage.getItem(LOCALE_KEY);
   return isLocale(v) ? v : "en";
-}
-
-/**
- * White replaced Paper as the default palette in v1 of the palette schema.
- * The version marker makes that migration one-shot: after it runs, choosing
- * Paper (or any community palette) is persisted normally and is never
- * overwritten again.
- */
-export function readPalettePreference(
-  storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
-): PaletteId {
-  if (storage.getItem(PALETTE_VERSION_KEY) === null) {
-    storage.setItem(PALETTE_KEY, "white");
-    storage.setItem(PALETTE_VERSION_KEY, PALETTE_VERSION);
-    return "white";
-  }
-  const value = storage.getItem(PALETTE_KEY);
-  return PALETTE_IDS.includes(value as PaletteId) ? (value as PaletteId) : "white";
-}
-
-function readPalette(): PaletteId {
-  return readPalettePreference();
 }
 
 function readDocFont(): DocFontId {
@@ -241,7 +212,6 @@ export interface UiState {
   theme: ThemeMode;
   /** UI language; English unless the user picked something else */
   locale: Locale;
-  palette: PaletteId;
   /** optional features the user can switch off (see `FeatureFlags`) */
   features: FeatureFlags;
   /** bumps on every feature toggle, so the editor can remount with new options */
@@ -273,7 +243,6 @@ export interface UiState {
   notice: Notice | null;
   setTheme: (t: ThemeMode) => void;
   setLocale: (locale: Locale) => void;
-  setPalette: (p: PaletteId) => void;
   setFeature: <K extends keyof FeatureFlags>(key: K, value: FeatureFlags[K]) => void;
   setFontSize: (px: number) => void;
   setDocFont: (font: DocFontId) => void;
@@ -299,7 +268,6 @@ export interface UiState {
 export const useUi = create<UiState>((set, get) => ({
   theme: readTheme(),
   locale: readLocale(),
-  palette: readPalette(),
   features: readFeatures(),
   featuresRev: 0,
   fontSize: readFontSize(),
@@ -326,12 +294,6 @@ export const useUi = create<UiState>((set, get) => ({
     localStorage.setItem(LOCALE_KEY, locale);
     applyLocale(locale);
     set({ locale });
-  },
-
-  setPalette: (palette) => {
-    localStorage.setItem(PALETTE_KEY, palette);
-    localStorage.setItem(PALETTE_VERSION_KEY, PALETTE_VERSION);
-    set({ palette });
   },
 
   setFeature: (key, value) => {
@@ -465,12 +427,12 @@ export function applyDocFont(font: DocFontId) {
   style.setProperty("--font-ui", stack);
 }
 
-export function applyTheme(mode: ThemeMode, palette: PaletteId = "white") {
+export function applyTheme(mode: ThemeMode) {
   const resolved = resolveTheme(mode);
   const root = document.documentElement;
-  // `data-palette` is always written, including "paper": a stale attribute from
-  // a hot reload must never outlive the choice it came from
-  root.dataset.palette = palette;
+  // Novion now ships one palette. Delete the attribute left by older builds
+  // (including a hot-reloaded document) so no stale selector can survive.
+  delete root.dataset.palette;
   root.classList.toggle("dark", resolved === "dark");
   root.style.colorScheme = resolved;
 }

@@ -4,10 +4,8 @@ import {
   FONT_SIZE_DEFAULT,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
-  resolveTheme,
   useUi,
   type DocFontId,
-  type PaletteId,
   type ThemeMode,
 } from "@/store/ui";
 import { cn } from "@/lib/utils";
@@ -17,21 +15,6 @@ const MODES: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
   { value: "system", label: "System", icon: Monitor },
-];
-
-/** Preview swatches: page / card / accent, per light and dark variant. */
-const PALETTES: {
-  id: PaletteId;
-  label: string;
-  light: [string, string, string];
-  dark: [string, string, string];
-}[] = [
-  { id: "white", label: "White", light: ["#ffffff", "#ffffff", "#4a6fa5"], dark: ["#16181b", "#1d2024", "#6b9bd2"] },
-  { id: "paper", label: "Paper", light: ["#f7f6f3", "#ffffff", "#4a6fa5"], dark: ["#1a1a1a", "#212121", "#6b9bd2"] },
-  { id: "catppuccin", label: "Catppuccin", light: ["#eff1f5", "#ffffff", "#1d64ef"], dark: ["#1e1e2e", "#24273a", "#89b4fa"] },
-  { id: "github", label: "GitHub", light: ["#ffffff", "#ffffff", "#0969da"], dark: ["#22272e", "#2d333b", "#539bf5"] },
-  { id: "rose-pine", label: "Rosé Pine", light: ["#faf4ed", "#fffaf3", "#286983"], dark: ["#232136", "#2a273f", "#c4a7e7"] },
-  { id: "gruvbox", label: "Gruvbox", light: ["#fbf1c7", "#fffcf2", "#076678"], dark: ["#282828", "#32302f", "#83a598"] },
 ];
 
 /** Order matches `DOC_FONT_IDS`; labels go through `t()` at render time. */
@@ -46,20 +29,16 @@ export function AppearanceSection() {
   const t = useT();
   const theme = useUi((s) => s.theme);
   const setTheme = useUi((s) => s.setTheme);
-  const palette = useUi((s) => s.palette);
-  const setPalette = useUi((s) => s.setPalette);
   const fontSize = useUi((s) => s.fontSize);
   const setFontSize = useUi((s) => s.setFontSize);
   const docFont = useUi((s) => s.docFont);
   const setDocFont = useUi((s) => s.setDocFont);
 
-  const dark = resolveTheme(theme) === "dark";
-
   return (
     <div>
       <div className="flex items-center justify-between">
         <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-          {t("Colour scheme")}
+          {t("Mode")}
         </div>
         <div className="flex items-center gap-1 rounded-md bg-muted/60 p-0.5">
           {MODES.map((mode) => {
@@ -76,7 +55,7 @@ export function AppearanceSection() {
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <mode.icon className="size-3" strokeWidth={1.9} />
+                <mode.icon className="size-3.5" strokeWidth={1.9} />
                 {t(mode.label)}
               </button>
             );
@@ -84,40 +63,11 @@ export function AppearanceSection() {
         </div>
       </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {PALETTES.map((option) => {
-          const active = palette === option.id;
-          const swatches = dark ? option.dark : option.light;
-          return (
-            <button
-              key={option.id}
-              onClick={() => setPalette(option.id)}
-              aria-pressed={active}
-              className={cn(
-                "rounded-lg border p-2 text-left transition-colors",
-                active ? "border-brand/60 bg-brand-soft" : "border-border hover:bg-accent/60",
-              )}
-            >
-              <div className="flex gap-1">
-                {swatches.map((color, index) => (
-                  <span
-                    key={index}
-                    className={cn(
-                      "h-6 flex-1 rounded border border-black/5",
-                      index === 0 && "flex-[2]",
-                    )}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
-              <div className="mt-1.5 flex items-center gap-1">
-                <span className="flex-1 text-[12.5px] font-medium">{t(option.label)}</span>
-                {active && <Check className="size-3.5 text-brand" />}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      <p className="mt-2 max-w-[430px] text-[11.5px] leading-relaxed text-muted-foreground">
+        {t(
+          "Novion uses a single white palette with vivid violet highlights. Dark mode follows the system when set to System.",
+        )}
+      </p>
 
       <div className="mt-6 border-t border-border/70 pt-4">
         <div className="flex items-center justify-between">

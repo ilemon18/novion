@@ -7,7 +7,7 @@
  * drifted apart.
  */
 export const MENU_CONTENT_CLASS =
-  "z-50 min-w-44 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-[0_10px_30px_-10px_rgba(0,0,0,0.35)]";
+  "z-50 min-w-44 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover";
 
 export const MENU_ITEM_CLASS =
   "flex h-7 w-full cursor-default select-none items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:opacity-70";

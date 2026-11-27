@@ -30,7 +30,7 @@ export const DialogContent = React.forwardRef<
   <DialogPrimitive.Portal>
     {/* no backdrop-blur: re-blurring a full-screen backdrop while the panel
         animates is what made opening dialogs feel sluggish */}
-    <DialogPrimitive.Overlay className="anim-fade fixed inset-0 z-50 bg-black/30" />
+    <DialogPrimitive.Overlay className="anim-fade fixed inset-0 z-50 bg-overlay" />
     <div
       className={cn(
         "pointer-events-none fixed inset-0 z-50 flex justify-center px-4",
@@ -40,7 +40,7 @@ export const DialogContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "pointer-events-auto relative w-[min(420px,calc(100vw-32px))] max-h-[calc(100vh-3rem)] overflow-auto rounded-xl border border-border bg-popover p-5 text-popover-foreground shadow-[0_16px_48px_-12px_rgba(0,0,0,0.28)] outline-none",
+          "pointer-events-auto relative w-[min(420px,calc(100vw-32px))] max-h-[calc(100vh-3rem)] overflow-auto rounded-xl border border-border bg-popover p-5 text-popover-foreground shadow-dialog outline-none",
           className,
         )}
         {...props}

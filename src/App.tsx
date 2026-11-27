@@ -42,7 +42,6 @@ export default function App() {
   const setError = useWorkspace((s) => s.setError);
   const createDoc = useWorkspace((s) => s.createDoc);
   const theme = useUi((s) => s.theme);
-  const palette = useUi((s) => s.palette);
   const historyEnabled = useUi((s) => s.features.history);
   const notice = useUi((s) => s.notice);
   const dismissNotice = useUi((s) => s.dismissNotice);
@@ -70,13 +69,13 @@ export default function App() {
   }, [remoteConnected]);
 
   useEffect(() => {
-    applyTheme(theme, palette);
+    applyTheme(theme);
     if (theme !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => applyTheme("system", palette);
+    const onChange = () => applyTheme("system");
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
-  }, [theme, palette]);
+  }, [theme]);
 
   // the UI owns this preference: mirror it into the backend at boot and on every
 // toggle, so saves stop (or resume) writing snapshots immediately
@@ -278,7 +277,7 @@ export default function App() {
               <div
                 key={notice.id}
                 className={cn(
-                  "anim-fade pointer-events-auto flex max-w-[min(560px,90vw)] items-center gap-2 rounded-lg border bg-popover px-3 py-2 text-[12.5px] shadow-lg",
+                  "anim-fade pointer-events-auto flex max-w-[min(560px,90vw)] items-center gap-2 rounded-lg border bg-popover px-3 py-2 text-[12.5px] shadow-popover",
                   notice.tone === "error" && "border-destructive/35",
                   notice.tone === "success" && "border-success/35",
                   notice.tone === "info" && "border-border",
@@ -320,7 +319,7 @@ export default function App() {
             )}
 
             {error && (
-              <div className="anim-fade pointer-events-auto flex max-w-[min(560px,90vw)] items-center gap-2 rounded-lg border border-destructive/35 bg-popover px-3 py-2 text-[12.5px] shadow-lg">
+              <div className="anim-fade pointer-events-auto flex max-w-[min(560px,90vw)] items-center gap-2 rounded-lg border border-destructive/35 bg-popover px-3 py-2 text-[12.5px] shadow-popover">
                 <span className="flex size-4 shrink-0 items-center justify-center text-destructive">
                   <TriangleAlert className="size-3.5" />
                 </span>

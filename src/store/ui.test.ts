@@ -41,62 +41,54 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("White palette migration", () => {
-  it("uses White for a new profile and records the migration version", async () => {
-    const storage = memoryStorage();
-    const { useUi } = await loadUi(storage);
-
-    expect(useUi.getState().palette).toBe("white");
-    expect(storage.getItem("novion:palette")).toBe("white");
-    expect(storage.getItem("novion:palette-version")).toBe("1");
-  });
-
-  it("keeps a persisted palette when the migration version already exists", async () => {
+describe("Novion Paper theme", () => {
+  it("defaults to system mode and removes legacy palette keys", async () => {
     const storage = memoryStorage({
       "novion:palette": "paper",
       "novion:palette-version": "1",
     });
     const { useUi } = await loadUi(storage);
 
-    expect(useUi.getState().palette).toBe("paper");
-    expect(storage.getItem("novion:palette")).toBe("paper");
+    expect(useUi.getState().theme).toBe("system");
+    expect("palette" in useUi.getState()).toBe(false);
+    expect(storage.getItem("novion:palette")).toBeNull();
+    expect(storage.getItem("novion:palette-version")).toBeNull();
   });
 
-  it("migrates an old Paper preference to White exactly once", async () => {
-    const storage = memoryStorage({ "novion:palette": "paper" });
-    const { useUi } = await loadUi(storage);
-
-    expect(useUi.getState().palette).toBe("white");
-    expect(storage.getItem("novion:palette")).toBe("white");
-    expect(storage.getItem("novion:palette-version")).toBe("1");
-  });
-
-  it("respects Paper after the user chooses it post-migration", async () => {
-    const storage = memoryStorage({ "novion:palette": "paper" });
+  it("persists the chosen display mode across reloads", async () => {
+    const storage = memoryStorage();
     const first = await loadUi(storage);
 
-    expect(first.useUi.getState().palette).toBe("white");
-    first.useUi.getState().setPalette("paper");
-    expect(first.readPalettePreference(storage)).toBe("paper");
+    first.useUi.getState().setTheme("dark");
+    expect(storage.getItem("novion:theme")).toBe("dark");
 
     vi.resetModules();
     const second = await import("./ui");
-    expect(second.useUi.getState().palette).toBe("paper");
-    expect(storage.getItem("novion:palette-version")).toBe("1");
+    expect(second.useUi.getState().theme).toBe("dark");
   });
 
-  it("applies White in light and dark mode without Paper leaking through", async () => {
+  it("applies light and dark mode without writing a palette", async () => {
     const storage = memoryStorage();
     const { applyTheme } = await loadUi(storage);
 
-    applyTheme("light", "white");
-    expect(root.dataset.palette).toBe("white");
+    applyTheme("light");
+    expect(root.dataset.palette).toBeUndefined();
     expect(root.classList.toggle).toHaveBeenLastCalledWith("dark", false);
     expect(root.style.colorScheme).toBe("light");
 
-    applyTheme("dark", "white");
-    expect(root.dataset.palette).toBe("white");
+    applyTheme("dark");
+    expect(root.dataset.palette).toBeUndefined();
     expect(root.classList.toggle).toHaveBeenLastCalledWith("dark", true);
     expect(root.style.colorScheme).toBe("dark");
+  });
+
+  it("clears a data-palette attribute left by an older build", async () => {
+    const storage = memoryStorage();
+    const { applyTheme } = await loadUi(storage);
+
+    root.dataset.palette = "catppuccin";
+    applyTheme("light");
+
+    expect(root.dataset.palette).toBeUndefined();
   });
 });

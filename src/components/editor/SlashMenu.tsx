@@ -36,7 +36,7 @@ export function SlashMenu() {
 
   return (
     <div
-      className="anim-menu fixed z-50 overflow-hidden rounded-lg border border-border bg-popover shadow-[0_12px_36px_-12px_rgba(0,0,0,0.35)]"
+      className="anim-menu fixed z-50 overflow-hidden rounded-lg border border-border bg-popover shadow-popover"
       style={{ left, top, width: MENU_W }}
       onMouseDown={(e) => e.preventDefault()}
     >

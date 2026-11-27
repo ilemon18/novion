@@ -63,7 +63,7 @@ export function Panel({
 }) {
   return (
     <div
-      className="absolute top-[calc(100%+6px)] z-50 rounded-lg border border-border bg-popover p-1 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.35)]"
+      className="absolute top-[calc(100%+6px)] z-50 rounded-lg border border-border bg-popover p-1 shadow-popover"
       style={align === "start" ? { left: 0, width } : { right: 0, width }}
     >
       {children}

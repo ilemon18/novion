@@ -59,9 +59,14 @@ export function Sidebar() {
       <div className="h-9 shrink-0" data-tauri-drag-region />
 
       <div className="flex items-center gap-1 px-3 pb-1.5">
-        <span className="mr-1 flex size-[14px] shrink-0 items-center justify-center rounded-[4px] bg-brand">
-          <span className="text-[9px] font-bold leading-none text-brand-foreground">N</span>
-        </span>
+        <img
+          src="/icon.png"
+          alt=""
+          width={22}
+          height={22}
+          draggable={false}
+          className="mr-1.5 size-[22px] shrink-0"
+        />
         <span className="flex-1 text-[13.5px] font-semibold tracking-[-0.01em] text-foreground/90">
           Novion
         </span>

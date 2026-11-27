@@ -13,7 +13,7 @@ installClientErrorHooks();
 
 const bootUi = useUi.getState();
 applyPlatform();
-applyTheme(bootUi.theme, bootUi.palette);
+applyTheme(bootUi.theme);
 applyFontSize(bootUi.fontSize);
 applyDocFont(bootUi.docFont);
 applyLocale(bootUi.locale);

@@ -65,6 +65,7 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-brand: var(--brand);
@@ -74,6 +75,9 @@
   --color-sidebar: var(--sidebar);
   --color-sidebar-hover: var(--sidebar-hover);
   --color-sidebar-active: var(--sidebar-active);
+  --color-overlay: var(--overlay);
+  --shadow-popover: var(--elevation-popover);
+  --shadow-dialog: var(--elevation-dialog);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -86,606 +90,146 @@
     Menlo, Consolas, "Cascadia Mono", "PingFang SC", monospace;
 }
 
+
+/*
+ * Novion Paper — one theme, two modes.
+ *
+ * The canvas stays white and the chrome uses neutral greys. A vivid violet
+ * accent is reserved for selection, focus, links and primary actions, so the
+ * highlight reads clearly without tinting large surfaces.
+ *
+ * Every colour is a literal value so the theme is predictable. Tints are mixed
+ * from --brand instead of being hand-picked, and --destructive-foreground
+ * lets the destructive fill invert correctly between light and dark.
+ */
 :root {
   --radius: 0.5rem;
-  /*
-   * Palette: warm neutral paper + a low-saturation blue accent.
-   * Every surface token is a literal hex so the theme is predictable; tints are
-   * mixed from --brand instead of being hand-picked.
-   */
-  --brand: #4a6fa5;
-  /* deep enough to carry white text (filled buttons, indicators) */
-  --brand-strong: #3f5f8e;
-  --brand-foreground: #ffffff;
-  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
 
-  --background: #f7f6f3;
-  --foreground: #2c2c2c;
+  --brand: #7c5ce5;
+  /* deep enough for white text on filled primary buttons */
+  --brand-strong: #6544d6;
+  --brand-foreground: #ffffff;
+  --brand-soft: color-mix(in srgb, var(--brand) 10%, transparent);
+
+  --background: #ffffff;
+  --foreground: #232426;
   --card: #ffffff;
-  --muted: #f0efeb;
-  --muted-foreground: #6b6b6b;
-  --accent: #efeee9;
-  --accent-foreground: #2c2c2c;
+  --muted: #f6f6f5;
+  --muted-foreground: #6b6d70;
+  --accent: #f2f2f1;
+  --accent-foreground: #232426;
   --popover: #ffffff;
-  --popover-foreground: #2c2c2c;
-  --border: #e2e0db;
-  --input: #dad8d2;
+  --popover-foreground: #232426;
+  --border: #e8e8e6;
+  --input: #dcdcd9;
   --ring: var(--brand);
   --primary: var(--brand-strong);
   --primary-foreground: var(--brand-foreground);
-  --destructive: #c25a5a;
-  --success: #4a9b74;
-  --warning: #c89b3c;
+  --destructive: #b04a44;
+  --destructive-foreground: #ffffff;
+  --success: #487659;
+  --warning: #93682a;
+
   /*
-   * The rail sits on its own tone, one step away from the page, so the
-   * navigation reads as chrome rather than as part of the document. The
-   * hover/active steps are *darker* than the rail: `--accent` is lighter here
-   * and would vanish into the paper.
+   * The rail is one quiet step below the page. Hover and active are darker
+   * than the rail; using the lighter --accent here would make the states
+   * disappear into the paper.
    */
-  --sidebar: #f1f0ec;
-  --sidebar-hover: #e8e6e1;
-  --sidebar-active: #e0ded8;
-  /* callout accents + highlight ink, so a palette swap restyles both */
-  --callout-tip: #2f9e5f;
-  --callout-warning: #c98a2b;
-  --callout-danger: #c0392b;
-  --mark-ink: #232323;
+  --sidebar: #f8f8f8;
+  --sidebar-hover: #f1f1f0;
+  --sidebar-active: #ececeb;
+
+  /* callout accents + highlight ink */
+  --callout-tip: #487659;
+  --callout-warning: #93682a;
+  --callout-danger: #b04a44;
+  --mark-ink: #232426;
+
+  /* overlays and elevation: neutral, not a brown veil */
+  --overlay: rgb(0 0 0 / 0.24);
+  --elevation-popover: 0 10px 30px -12px rgb(24 22 20 / 0.12);
+  --elevation-dialog: 0 18px 48px -16px rgb(24 22 20 / 0.18);
+
   /*
    * Interface face: every label, the sidebar, menus and dialogs inherit this
-   * through `--font-sans`. macOS faces first, then the Windows ones
-   * (-apple-system is the native UI font there, Segoe UI is its Windows
-   * counterpart), with the CJK companions in the same order. Overridden on
-   * <html> by `applyDocFont()` from settings.
+   * through `--font-sans`. Overridden on <html> by `applyDocFont()`.
    */
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei UI",
     "Microsoft YaHei", Arial, sans-serif;
-  /* adjustable from settings (13–20px), default 14px */
+  /* adjustable from settings (13–20px) */
   --doc-font-size: 15px;
   --doc-title-size: calc(var(--doc-font-size) * 2);
-  /*
-   * Document body face. It follows the interface face by default; the editor
-   * and the document title read this variable, so a future split (different
-   * faces for chrome and paper) only needs to stop writing `--font-ui` here.
-   */
   --font-doc: var(--font-ui);
-  /*
-   * Syntax colours for code blocks. Low saturation on purpose: code should be
-   * scannable against warm paper, not compete with the surrounding text.
-   */
-  --tok-keyword: #7a56a8;
-  --tok-builtin: #3f6f8e;
-  --tok-string: #4a8a5f;
-  --tok-number: #b06a3b;
-  --tok-literal: #a2593f;
-  --tok-comment: #96968c;
-  --tok-tag: #a0483f;
-  --tok-attr: #8a6a34;
-  --tok-operator: #7a7a72;
-  --tok-meta: #9a9a92;
-  --tok-add: #4a8a5f;
-  --tok-del: #b0605a;
+
+  /* Syntax colours: muted enough for a white page, still scannable. */
+  --tok-keyword: #8a5a72;
+  --tok-builtin: #4f708a;
+  --tok-string: #4b7057;
+  --tok-number: #98613f;
+  --tok-literal: #8e4f43;
+  --tok-comment: #7b746a;
+  --tok-tag: #9a4f45;
+  --tok-attr: #7f6638;
+  --tok-operator: #6f6a62;
+  --tok-meta: #948c81;
+  --tok-add: #4b7057;
+  --tok-del: #a2544b;
   color-scheme: light;
 }
 
 .dark {
-  --brand: #6b9bd2;
-  --brand-strong: #5b8ac4;
-  /* light blue fill needs dark ink, not white */
-  --brand-foreground: #10161f;
-  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
+  --brand: #b39cff;
+  --brand-strong: #a98bff;
+  /* the light fill needs dark ink, not white */
+  --brand-foreground: #1b1d20;
+  --brand-soft: color-mix(in srgb, var(--brand) 16%, transparent);
 
-  --background: #1a1a1a;
-  --foreground: #e6e6e6;
-  --card: #212121;
-  --muted: #242424;
-  --muted-foreground: #9a9a9a;
-  --accent: #292929;
-  --accent-foreground: #f0f0f0;
-  --popover: #212121;
-  --popover-foreground: #e6e6e6;
-  --border: #2e2e2e;
-  --input: #3a3a3a;
+  --background: #181818;
+  --foreground: #ececec;
+  --card: #202020;
+  --muted: #272727;
+  --muted-foreground: #a9a9a8;
+  --accent: #2f2f2f;
+  --accent-foreground: #ececec;
+  --popover: #202020;
+  --popover-foreground: #ececec;
+  --border: #373737;
+  --input: #474747;
   --ring: var(--brand);
   --primary: var(--brand-strong);
   --primary-foreground: var(--brand-foreground);
-  --destructive: #d96b6b;
-  --success: #5db88a;
-  --warning: #d4a843;
+  --destructive: #e29086;
+  --destructive-foreground: #231a17;
+  --success: #7fbf95;
+  --warning: #d6a95b;
+
   --sidebar: #141414;
-  --sidebar-hover: #232323;
+  --sidebar-hover: #222222;
   --sidebar-active: #2b2b2b;
 
-  --callout-tip: #4fbf82;
-  --callout-warning: #e0a34a;
-  --callout-danger: #e06c5f;
-  --mark-ink: #1c1f27;
+  --callout-tip: #7fbf95;
+  --callout-warning: #d6a95b;
+  --callout-danger: #e29086;
+  --mark-ink: #181818;
 
-  /* code tokens, lifted for dark paper */
-  --tok-keyword: #b79ae0;
-  --tok-builtin: #8bb8d8;
-  --tok-string: #8cc39c;
-  --tok-number: #dfa07a;
-  --tok-literal: #e0a882;
-  --tok-comment: #6f6f6f;
-  --tok-tag: #e09088;
-  --tok-attr: #d3b478;
-  --tok-operator: #8f8f8f;
-  --tok-meta: #7c7c7c;
-  --tok-add: #8cc39c;
-  --tok-del: #d98b85;
-  color-scheme: dark;
-}
+  --overlay: rgb(0 0 0 / 0.58);
+  --elevation-popover: 0 12px 34px -14px rgb(0 0 0 / 0.55);
+  --elevation-dialog: 0 20px 56px -18px rgb(0 0 0 / 0.66);
 
-/*
- * White is the default palette: a pure-white page with neutral grey chrome.
- * Its brand, semantic, callout and syntax colours intentionally match Paper.
- * The dark block redeclares every themed token so no light value can leak.
- */
-:root[data-palette="white"] {
-  --brand: #4a6fa5;
-  --brand-strong: #3f5f8e;
-  --brand-foreground: #ffffff;
-  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
-
-  --background: #ffffff;
-  --foreground: #202124;
-  --card: #ffffff;
-  --muted: #f5f6f7;
-  --muted-foreground: #646a73;
-  --accent: #eceef1;
-  --accent-foreground: #202124;
-  --popover: #ffffff;
-  --popover-foreground: #202124;
-  --border: #e3e5e8;
-  --input: #d7d9dd;
-  --ring: var(--brand);
-  --primary: var(--brand-strong);
-  --primary-foreground: var(--brand-foreground);
-  --destructive: #c25a5a;
-  --success: #4a9b74;
-  --warning: #c89b3c;
-  --sidebar: #f5f6f7;
-  --sidebar-hover: #eceef1;
-  --sidebar-active: #e1e4e8;
-
-  --callout-tip: #2f9e5f;
-  --callout-warning: #c98a2b;
-  --callout-danger: #c0392b;
-  --mark-ink: #202124;
-
-  --tok-keyword: #7a56a8;
-  --tok-builtin: #3f6f8e;
-  --tok-string: #4a8a5f;
-  --tok-number: #b06a3b;
-  --tok-literal: #a2593f;
-  --tok-comment: #96968c;
-  --tok-tag: #a0483f;
-  --tok-attr: #8a6a34;
-  --tok-operator: #7a7a72;
-  --tok-meta: #9a9a92;
-  --tok-add: #4a8a5f;
-  --tok-del: #b0605a;
-  color-scheme: light;
-}
-
-:root[data-palette="white"].dark {
-  --brand: #6b9bd2;
-  --brand-strong: #5b8ac4;
-  --brand-foreground: #10161f;
-  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
-
-  --background: #16181b;
-  --foreground: #e8eaed;
-  --card: #1d2024;
-  --muted: #202327;
-  --muted-foreground: #9aa0a6;
-  --accent: #23262b;
-  --accent-foreground: #f0f2f4;
-  --popover: #1d2024;
-  --popover-foreground: #e8eaed;
-  --border: #30343a;
-  --input: #3a3f46;
-  --ring: var(--brand);
-  --primary: var(--brand-strong);
-  --primary-foreground: var(--brand-foreground);
-  --destructive: #d96b6b;
-  --success: #5db88a;
-  --warning: #d4a843;
-  --sidebar: #111316;
-  --sidebar-hover: #23262b;
-  --sidebar-active: #2b2f35;
-
-  --callout-tip: #4fbf82;
-  --callout-warning: #e0a34a;
-  --callout-danger: #e06c5f;
-  --mark-ink: #1c1f27;
-
-  --tok-keyword: #b79ae0;
-  --tok-builtin: #8bb8d8;
-  --tok-string: #8cc39c;
-  --tok-number: #dfa07a;
-  --tok-literal: #e0a882;
-  --tok-comment: #6f6f6f;
-  --tok-tag: #e09088;
-  --tok-attr: #d3b478;
-  --tok-operator: #8f8f8f;
-  --tok-meta: #7c7c7c;
-  --tok-add: #8cc39c;
-  --tok-del: #d98b85;
-  color-scheme: dark;
-}
-
-/*
- * Palettes. `:root[data-palette=…]` is (0,2,0), so it beats `.dark` (0,1,0)
- * and is therefore the *light* variant; the dark variant adds `.dark` (0,3,0)
- * and must redeclare every token the light block declares, otherwise a light
- * value leaks into dark mode.
- *
- * Four community palettes, values from each project's official palette:
- *   Catppuccin  Latte / Mocha          https://catppuccin.com/palette
- *   GitHub      Light / Dark Dimmed    https://primer.style
- *   Rosé Pine   Dawn / Moon            https://rosepinetheme.com/palette
- *   Gruvbox     Light / Dark (medium)  https://github.com/morhetz/gruvbox
- *
- * Two deliberate deviations, both because the document body sits directly on
- * `--background` here (there is no inner sheet): `--foreground` is deepened
- * until it clears 8.5:1 so body text never reads as veiled, and
- * `--muted-foreground` is lifted until it clears 5.5:1 because it carries UI
- * labels everywhere. Syntax colours that fell under 3.6:1 on the code-block
- * ground (`--muted`) were deepened to 4:1, comments to 3:1. The official
- * value is kept in a comment next to every adjusted token.
- */
-
-:root[data-palette="catppuccin"] {
-  --brand: #1d64ef;                     /* blue, official #1e66f5 */
-  --brand-strong: #1553cf;
-  --brand-foreground: #ffffff;
-  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
-  --background: #eff1f5;                /* base */
-  --foreground: #414359;                /* text, official #4c4f69 */
-  --card: #ffffff;
-  --muted: #e6e9ef;                     /* mantle */
-  --muted-foreground: #5c5f77;          /* subtext1 */
-  --accent: #dce0e8;                    /* crust */
-  --accent-foreground: #4c4f69;
-  --popover: #ffffff;
-  --popover-foreground: #414359;
-  --border: #ccd0da;                    /* surface0 */
-  --input: #bcc0cc;                     /* surface1 */
-  --ring: var(--brand);
-  --primary: var(--brand-strong);
-  --primary-foreground: var(--brand-foreground);
-  --destructive: #d20f39;               /* red */
-  --success: #40a02b;                   /* green */
-  --warning: #9a6410;                   /* yellow, official #df8e1d */
-  --sidebar: #e6e9ef;
-  --sidebar-hover: #dce0e8;
-  --sidebar-active: #ccd0da;
-  --callout-tip: #40a02b;
-  --callout-warning: #9a6410;
-  --callout-danger: #d20f39;
-  --mark-ink: #414359;
-  --tok-keyword: #8839ef;               /* mauve */
-  --tok-builtin: #1e66f5;               /* blue */
-  --tok-string: #348123;                /* green, official #40a02b */
-  --tok-number: #c14c08;                /* peach, official #fe640b */
-  --tok-literal: #cb3d49;               /* maroon, official #e64553 */
-  --tok-comment: #828596;               /* overlay1, official #8c8fa1 */
-  --tok-tag: #cb3d49;                   /* maroon */
-  --tok-attr: #9d6414;                  /* yellow, official #df8e1d */
-  --tok-operator: #6d7082;              /* overlay2, official #7c7f93 */
-  --tok-meta: #828596;                  /* overlay1 */
-  --tok-add: #348123;                   /* green */
-  --tok-del: #d20f39;                   /* red */
-  color-scheme: light;
-}
-
-:root[data-palette="catppuccin"].dark {
-  --brand: #89b4fa;                     /* blue */
-  --brand-strong: #6f9df0;
-  --brand-foreground: #11111b;
-  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
-  --background: #1e1e2e;                /* base */
-  --foreground: #cdd6f4;                /* text */
-  --card: #24273a;
-  --muted: #313244;                     /* surface0 */
-  --muted-foreground: #a6adc8;          /* subtext0 */
-  --accent: #313244;                    /* surface0 */
-  --accent-foreground: #cdd6f4;
-  --popover: #24273a;
-  --popover-foreground: #cdd6f4;
-  --border: #313244;                    /* surface0 */
-  --input: #45475a;                     /* surface1 */
-  --ring: var(--brand);
-  --primary: var(--brand-strong);
-  --primary-foreground: var(--brand-foreground);
-  --destructive: #f38ba8;               /* red */
-  --success: #a6e3a1;                   /* green */
-  --warning: #f9e2af;                   /* yellow */
-  --sidebar: #181825;                   /* mantle */
-  --sidebar-hover: #24273a;
-  --sidebar-active: #2d3044;
-  --callout-tip: #a6e3a1;
-  --callout-warning: #f9e2af;
-  --callout-danger: #f38ba8;
-  --mark-ink: #11111b;
-  --tok-keyword: #cba6f7;               /* mauve */
-  --tok-builtin: #89b4fa;               /* blue */
-  --tok-string: #a6e3a1;                /* green */
-  --tok-number: #fab387;                /* peach */
-  --tok-literal: #eba0ac;               /* maroon */
-  --tok-comment: #777b8f;               /* overlay0, official #6c7086 */
-  --tok-tag: #f38ba8;                   /* red */
-  --tok-attr: #f9e2af;                  /* yellow */
-  --tok-operator: #89dceb;              /* sky */
-  --tok-meta: #9399b2;                  /* overlay2 */
-  --tok-add: #a6e3a1;                   /* green */
-  --tok-del: #f38ba8;                   /* red */
-  color-scheme: dark;
-}
-
-:root[data-palette="github"] {
-  --brand: #0969da;                     /* accent.fg */
-  --brand-strong: #0550ae;
-  --brand-foreground: #ffffff;
-  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
-  --background: #ffffff;                /* canvas.default */
-  --foreground: #1f2328;                /* fg.default */
-  --card: #ffffff;
-  --muted: #f6f8fa;                     /* canvas.subtle */
-  --muted-foreground: #59636e;          /* fg.muted */
-  --accent: #eaeef2;
-  --accent-foreground: #1f2328;
-  --popover: #ffffff;
-  --popover-foreground: #1f2328;
-  --border: #d1d9e0;                    /* border.default */
-  --input: #d1d9e0;
-  --ring: var(--brand);
-  --primary: var(--brand-strong);
-  --primary-foreground: var(--brand-foreground);
-  --destructive: #cf222e;               /* danger.fg */
-  --success: #1a7f37;                   /* success.fg */
-  --warning: #9a6700;                   /* attention.fg */
-  --sidebar: #f6f8fa;
-  --sidebar-hover: #eaeef2;
-  --sidebar-active: #dfe3e8;
-  --callout-tip: #1a7f37;
-  --callout-warning: #9a6700;
-  --callout-danger: #cf222e;
-  --mark-ink: #1f2328;
-  --tok-keyword: #cf222e;
-  --tok-builtin: #0550ae;
-  --tok-string: #0a3069;
-  --tok-number: #0550ae;
-  --tok-literal: #953800;
-  --tok-comment: #59636e;
-  --tok-tag: #116329;
-  --tok-attr: #0550ae;
-  --tok-operator: #1f2328;
-  --tok-meta: #59636e;
-  --tok-add: #1a7f37;
-  --tok-del: #cf222e;
-  color-scheme: light;
-}
-
-:root[data-palette="github"].dark {
-  --brand: #539bf5;                     /* accent.fg */
-  --brand-strong: #4184d6;
-  --brand-foreground: #0d1117;
-  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
-  --background: #22272e;                /* canvas.default */
-  --foreground: #bac5d0;                /* fg.default, official #adbac7 */
-  --card: #2d333b;                      /* canvas.subtle */
-  --muted: #2d333b;
-  --muted-foreground: #929eaa;          /* fg.muted, official #768390 */
-  --accent: #373e47;                    /* canvas.inset */
-  --accent-foreground: #cdd9e5;
-  --popover: #2d333b;
-  --popover-foreground: #bac5d0;
-  --border: #444c56;                    /* border.default */
-  --input: #545d68;                     /* border.muted */
-  --ring: var(--brand);
-  --primary: var(--brand-strong);
-  --primary-foreground: var(--brand-foreground);
-  --destructive: #e5534b;               /* danger.fg */
-  --success: #57ab5a;                   /* success.fg */
-  --warning: #c69026;                   /* attention.fg */
-  --sidebar: #1c2128;                   /* canvas.inset */
-  --sidebar-hover: #22272e;
-  --sidebar-active: #2d333b;
-  --callout-tip: #57ab5a;
-  --callout-warning: #c69026;
-  --callout-danger: #e5534b;
-  --mark-ink: #0d1117;
-  --tok-keyword: #f47067;
-  --tok-builtin: #6cb6ff;
-  --tok-string: #96d0ff;
-  --tok-number: #6cb6ff;
-  --tok-literal: #f69d50;
-  --tok-comment: #768390;
-  --tok-tag: #8ddb8c;
-  --tok-attr: #6cb6ff;
-  --tok-operator: #adbac7;
-  --tok-meta: #768390;
-  --tok-add: #57ab5a;
-  --tok-del: #e86962;                   /* danger.fg, official #e5534b */
-  color-scheme: dark;
-}
-
-:root[data-palette="rose-pine"] {
-  --brand: #286983;                     /* pine */
-  --brand-strong: #1f5569;
-  --brand-foreground: #fffaf3;
-  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
-  --background: #faf4ed;                /* base */
-  --foreground: #474363;                /* text, official #575279 */
-  --card: #fffaf3;                      /* surface */
-  --muted: #f2e9e1;                     /* overlay */
-  --muted-foreground: #63607a;          /* subtle, official #797593 */
-  --accent: #f2e9e1;                    /* overlay */
-  --accent-foreground: #575279;
-  --popover: #fffaf3;
-  --popover-foreground: #474363;
-  --border: #ded4ca;                    /* highlight.high */
-  --input: #d4c9be;
-  --ring: var(--brand);
-  --primary: var(--brand-strong);
-  --primary-foreground: var(--brand-foreground);
-  --destructive: #b4637a;               /* love */
-  --success: #56949f;                   /* foam */
-  --warning: #a56a10;                   /* gold, official #ea9d34 */
-  --sidebar: #f2e9e1;
-  --sidebar-hover: #ebe1d8;
-  --sidebar-active: #e2d9d0;
-  --callout-tip: #56949f;
-  --callout-warning: #a56a10;
-  --callout-danger: #b4637a;
-  --mark-ink: #474363;
-  --tok-keyword: #7e6a94;               /* iris, official #907aa9 */
-  --tok-builtin: #286983;               /* pine */
-  --tok-string: #477a83;                /* foam, official #56949f */
-  --tok-number: #9a6722;                /* gold, official #ea9d34 */
-  --tok-literal: #a0615e;               /* rose, official #d7827e */
-  --tok-comment: #898494;               /* muted, official #9893a5 */
-  --tok-tag: #a65b71;                   /* love, official #b4637a */
-  --tok-attr: #9a6722;                  /* gold */
-  --tok-operator: #797593;              /* subtle */
-  --tok-meta: #898494;                  /* muted */
-  --tok-add: #477a83;                   /* foam */
-  --tok-del: #a65b71;                   /* love */
-  color-scheme: light;
-}
-
-:root[data-palette="rose-pine"].dark {
-  --brand: #c4a7e7;                     /* iris */
-  --brand-strong: #a98fd4;
-  --brand-foreground: #16121f;
-  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
-  --background: #232136;                /* base */
-  --foreground: #e0def4;                /* text */
-  --card: #2a273f;                      /* surface */
-  --muted: #393552;                     /* overlay */
-  --muted-foreground: #9a97b2;          /* subtle, official #908caa */
-  --accent: #393552;                    /* overlay */
-  --accent-foreground: #e0def4;
-  --popover: #2a273f;
-  --popover-foreground: #e0def4;
-  --border: #393552;                    /* highlight.high */
-  --input: #44415a;                     /* highlight.med */
-  --ring: var(--brand);
-  --primary: var(--brand-strong);
-  --primary-foreground: var(--brand-foreground);
-  --destructive: #eb6f92;               /* love */
-  --success: #9ccfd8;                   /* foam */
-  --warning: #f6c177;                   /* gold */
-  --sidebar: #1f1d2e;                   /* main.base */
-  --sidebar-hover: #2a273f;
-  --sidebar-active: #393552;
-  --callout-tip: #9ccfd8;
-  --callout-warning: #f6c177;
-  --callout-danger: #eb6f92;
-  --mark-ink: #16121f;
-  --tok-keyword: #c4a7e7;               /* iris */
-  --tok-builtin: #9ccfd8;               /* foam */
-  --tok-string: #9ccfd8;                /* foam */
-  --tok-number: #f6c177;                /* gold */
-  --tok-literal: #ea9a97;               /* rose */
-  --tok-comment: #827f97;               /* muted, official #6e6a86 */
-  --tok-tag: #eb6f92;                   /* love */
-  --tok-attr: #f6c177;                  /* gold */
-  --tok-operator: #908caa;              /* subtle */
-  --tok-meta: #908caa;                  /* subtle */
-  --tok-add: #9ccfd8;                   /* foam */
-  --tok-del: #eb6f92;                   /* love */
-  color-scheme: dark;
-}
-
-:root[data-palette="gruvbox"] {
-  --brand: #076678;                     /* blue */
-  --brand-strong: #05505e;
-  --brand-foreground: #fbf1c7;
-  --brand-soft: color-mix(in srgb, var(--brand) 12%, transparent);
-  --background: #fbf1c7;                /* bg0 */
-  --foreground: #3c3836;                /* fg1 */
-  --card: #fffcf2;
-  --muted: #f2e5bc;                     /* bg0_s */
-  --muted-foreground: #665c54;          /* fg3 */
-  --accent: #ebdbb2;                    /* bg1 */
-  --accent-foreground: #3c3836;
-  --popover: #fffcf2;
-  --popover-foreground: #3c3836;
-  --border: #e2d4ad;
-  --input: #d5c4a1;                     /* bg2 */
-  --ring: var(--brand);
-  --primary: var(--brand-strong);
-  --primary-foreground: var(--brand-foreground);
-  --destructive: #9d0006;               /* red */
-  --success: #79740e;                   /* green */
-  --warning: #b57614;                   /* yellow */
-  --sidebar: #f2e5bc;
-  --sidebar-hover: #ebdbb2;
-  --sidebar-active: #d5c4a1;
-  --callout-tip: #79740e;
-  --callout-warning: #b57614;
-  --callout-danger: #9d0006;
-  --mark-ink: #3c3836;
-  --tok-keyword: #9d0006;               /* red */
-  --tok-builtin: #076678;               /* blue */
-  --tok-string: #79740e;                /* green */
-  --tok-number: #8f3f71;                /* purple */
-  --tok-literal: #af3a03;               /* orange */
-  --tok-comment: #908172;               /* gray, official #928374 */
-  --tok-tag: #9d0006;                   /* red */
-  --tok-attr: #996311;                  /* yellow, official #b57614 */
-  --tok-operator: #665c54;              /* fg3 */
-  --tok-meta: #908172;                  /* gray */
-  --tok-add: #79740e;                   /* green */
-  --tok-del: #9d0006;                   /* red */
-  color-scheme: light;
-}
-
-:root[data-palette="gruvbox"].dark {
-  --brand: #83a598;                     /* blue */
-  --brand-strong: #6d9185;
-  --brand-foreground: #1d2021;
-  --brand-soft: color-mix(in srgb, var(--brand) 18%, transparent);
-  --background: #282828;                /* bg0 */
-  --foreground: #ebdbb2;                /* fg1 */
-  --card: #32302f;                      /* bg0_s */
-  --muted: #3c3836;                     /* bg1 */
-  --muted-foreground: #ab9c88;          /* fg4, official #a89984 */
-  --accent: #3c3836;                    /* bg1 */
-  --accent-foreground: #ebdbb2;
-  --popover: #32302f;
-  --popover-foreground: #ebdbb2;
-  --border: #504945;                    /* bg2 */
-  --input: #665c54;                     /* bg3 */
-  --ring: var(--brand);
-  --primary: var(--brand-strong);
-  --primary-foreground: var(--brand-foreground);
-  --destructive: #fb4934;               /* red */
-  --success: #b8bb26;                   /* green */
-  --warning: #fabd2f;                   /* yellow */
-  --sidebar: #1d2021;                   /* bg0_h */
-  --sidebar-hover: #32302f;
-  --sidebar-active: #3c3836;
-  --callout-tip: #b8bb26;
-  --callout-warning: #fabd2f;
-  --callout-danger: #fb4934;
-  --mark-ink: #1d2021;
-  --tok-keyword: #fc6857;               /* red, official #fb4934 */
-  --tok-builtin: #83a598;               /* blue */
-  --tok-string: #b8bb26;                /* green */
-  --tok-number: #d3869b;                /* purple */
-  --tok-literal: #fe8019;               /* orange */
-  --tok-comment: #928374;               /* gray */
-  --tok-tag: #fc6857;                   /* red */
-  --tok-attr: #fabd2f;                  /* yellow */
-  --tok-operator: #a89984;              /* fg4 */
-  --tok-meta: #928374;                  /* gray */
-  --tok-add: #b8bb26;                   /* green */
-  --tok-del: #fc6857;                   /* red */
+  /* code tokens, lifted for the charcoal background */
+  --tok-keyword: #c89bb2;
+  --tok-builtin: #93b5cc;
+  --tok-string: #9fc2a8;
+  --tok-number: #d8a37e;
+  --tok-literal: #d9a08e;
+  --tok-comment: #8b8378;
+  --tok-tag: #d99a90;
+  --tok-attr: #cdb07a;
+  --tok-operator: #a39a8e;
+  --tok-meta: #8c8378;
+  --tok-add: #9fc2a8;
+  --tok-del: #d9988f;
   color-scheme: dark;
 }
 
@@ -717,7 +261,7 @@
     user-select: text;
   }
   ::selection {
-    background: color-mix(in srgb, var(--color-brand) 22%, transparent);
+    background: color-mix(in srgb, var(--color-brand) 20%, transparent);
   }
   kbd {
     font-family: var(--font-sans);
@@ -829,7 +373,7 @@ html[data-platform="windows"] .scroll-pane {
   outline: none;
   font-family: var(--font-doc);
   font-size: var(--doc-font-size);
-  line-height: 1.72;
+  line-height: 1.75;
   color: var(--color-foreground);
   caret-color: var(--color-foreground);
   padding-bottom: 10vh;
