@@ -90,7 +90,7 @@ export function CommandPalette() {
         <DialogTitle className="sr-only">{t("Command palette")}</DialogTitle>
 
         <div className="flex items-center gap-2 border-b border-border/70 px-3.5 py-2.5">
-          <Search className="size-3.5 shrink-0 text-muted-foreground" />
+          <Search className="size-4 shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             value={query}
@@ -138,7 +138,7 @@ export function CommandPalette() {
                     )}
                   >
                     <Icon
-                      className="size-3.5 shrink-0 text-muted-foreground"
+                      className="size-4 shrink-0 text-muted-foreground"
                       strokeWidth={1.8}
                     />
                     <span className="min-w-0 flex-1">

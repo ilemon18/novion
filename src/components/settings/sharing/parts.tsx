@@ -30,10 +30,10 @@ export function SharingPageHeader({
   return (
     <div className="flex items-center gap-2">
       <Button size="iconSm" variant="ghost" aria-label={t("Back")} onClick={onBack}>
-        <ChevronLeft className="size-4" />
+        <ChevronLeft className="size-4.5" />
       </Button>
       <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand">
-        <Icon className="size-3.5" strokeWidth={1.8} />
+        <Icon className="size-4" strokeWidth={1.8} />
       </span>
       <div className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</div>
       {status ? <SharingStatusPill>{status}</SharingStatusPill> : null}
@@ -45,7 +45,7 @@ export function SharingError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
     <div className="mt-4 flex items-start gap-1.5 rounded-md border border-destructive/35 px-2 py-1.5 text-[11.5px] leading-relaxed text-destructive">
-      <AlertTriangle className="mt-[1px] size-3.5 shrink-0" />
+      <AlertTriangle className="mt-[1px] size-4 shrink-0" />
       <span className="min-w-0 break-words">{message}</span>
     </div>
   );

@@ -179,7 +179,7 @@ export function DocOutline({ items, editor, scrollRef, onClose }: Props) {
                 className="mt-[2px] flex size-[15px] shrink-0 items-center justify-center rounded text-muted-foreground/60 hover:bg-accent hover:text-foreground"
               >
                 <ChevronRight
-                  className={cn("size-3 transition-transform duration-100", open && "rotate-90")}
+                  className={cn("size-3.5 transition-transform duration-100", open && "rotate-90")}
                 />
               </button>
             ) : (
@@ -212,7 +212,7 @@ export function DocOutline({ items, editor, scrollRef, onClose }: Props) {
           aria-label={t("Close outline")}
           className="flex size-7 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground active:bg-accent"
         >
-          <X className="size-4" strokeWidth={1.9} />
+          <X className="size-4.5" strokeWidth={1.9} />
         </button>
       </div>
 

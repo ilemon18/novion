@@ -249,7 +249,7 @@ export function SearchDialog() {
         <DialogTitle className="sr-only">{t("Search notes")}</DialogTitle>
 
         <div className="flex items-center gap-2 border-b border-border/70 px-3.5">
-          <Search className="size-4 shrink-0 text-brand" />
+          <Search className="size-4.5 shrink-0 text-brand" />
           <input
             ref={inputRef}
             value={query}
@@ -259,7 +259,7 @@ export function SearchDialog() {
             spellCheck={false}
             className="h-11 min-w-0 flex-1 selectable bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/60"
           />
-          {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground/60" />}
+          {loading && <Loader2 className="size-4 animate-spin text-muted-foreground/60" />}
           <kbd className="hidden shrink-0 sm:block">esc</kbd>
         </div>
 
@@ -307,7 +307,7 @@ export function SearchDialog() {
               )}
             >
               <FileText
-                className="mt-[3px] size-3.5 shrink-0 text-muted-foreground/80"
+                className="mt-[3px] size-4 shrink-0 text-muted-foreground/80"
                 strokeWidth={1.8}
               />
               <span className="min-w-0 flex-1">
@@ -337,7 +337,7 @@ export function SearchDialog() {
                 )}
               </span>
               {index === active && (
-                <ArrowRight className="mt-[3px] size-3.5 shrink-0 text-brand" />
+                <ArrowRight className="mt-[3px] size-4 shrink-0 text-brand" />
               )}
             </button>
           ))}

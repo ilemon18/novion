@@ -13,13 +13,13 @@ export function EmptyState({
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 pb-16 text-center">
       <div className="flex size-12 items-center justify-center rounded-xl border border-brand/25 bg-brand-soft shadow-sm">
-        <FilePlus className="size-5 text-brand" strokeWidth={1.6} />
+        <FilePlus className="size-5.5 text-brand" strokeWidth={1.6} />
       </div>
       <div className="mt-4 text-[14.5px] font-medium tracking-[-0.01em]">
         {hasDocs ? t("Select a note") : t("No notes yet")}
       </div>
       <Button variant="accent" size="sm" className="mt-5" onClick={onCreate}>
-        <Plus className="size-3.5" />
+        <Plus className="size-4" />
         {t("New document")}
       </Button>
     </div>

@@ -54,7 +54,7 @@ export function NotionSection() {
   if (!info) {
     return (
       <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-        {loading ? <Loader2 className="size-3.5 animate-spin" /> : null}
+        {loading ? <Loader2 className="size-4 animate-spin" /> : null}
         {t("Reading Notion settings…")}
       </div>
     );
@@ -108,7 +108,7 @@ export function NotionSection() {
         <div className="rounded-lg border border-brand/50 bg-brand-soft px-3 py-2.5">
           <div className="flex items-center gap-2">
             <span className="flex size-4 items-center justify-center rounded-full bg-brand text-brand-foreground">
-              <Check className="size-2.5" strokeWidth={3} />
+              <Check className="size-3" strokeWidth={3} />
             </span>
             <span className="text-[12.5px] font-medium">{t("Notion connected")}</span>
             <span className="ml-auto font-mono text-[10.5px] text-muted-foreground">
@@ -151,7 +151,7 @@ export function NotionSection() {
                 })
               }
             >
-              <Unplug className="size-3.5" />
+              <Unplug className="size-4" />
               {t("Disconnect")}
             </Button>
             <Button
@@ -196,7 +196,7 @@ export function NotionSection() {
                 onClick={() => setShowToken((v) => !v)}
                 className="absolute right-1 top-1 flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
               >
-                {showToken ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
             <Button
@@ -205,7 +205,7 @@ export function NotionSection() {
               disabled={!token.trim() || connecting}
               onClick={() => void submitToken()}
             >
-              {connecting ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {connecting ? <Loader2 className="size-4 animate-spin" /> : null}
               {t("Verify and save")}
             </Button>
           </div>
@@ -219,7 +219,7 @@ export function NotionSection() {
         </div>
         {hasParent ? (
           <div className="mt-2 flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-            <Link2 className="size-3.5 shrink-0 text-brand" strokeWidth={1.8} />
+            <Link2 className="size-4 shrink-0 text-brand" strokeWidth={1.8} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12.5px] font-medium">{info.parentPageTitle}</div>
             </div>
@@ -234,7 +234,7 @@ export function NotionSection() {
                   .catch((err) => console.error(errorMessage(err)));
               }}
             >
-              <ArrowUpRight className="size-3.5" />
+              <ArrowUpRight className="size-4" />
               {t("Open")}
             </Button>
             <Button
@@ -271,7 +271,7 @@ export function NotionSection() {
             disabled={!target.trim() || settingParent || !connected}
             onClick={() => void submitParent()}
           >
-            {settingParent ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            {settingParent ? <Loader2 className="size-4 animate-spin" /> : null}
             {t("Check page")}
           </Button>
         </div>
@@ -291,7 +291,7 @@ export function NotionSection() {
         {syncing ? (
           <div className="mt-3">
             <div className="flex items-center gap-2 text-[12.5px] font-medium">
-              <Loader2 className="size-3.5 animate-spin text-brand" />
+              <Loader2 className="size-4 animate-spin text-brand" />
               {t("Syncing with Notion…")}
             </div>
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -349,7 +349,7 @@ export function NotionSection() {
               disabled={!connected || !hasParent}
               onClick={() => void startSync()}
             >
-              <Upload className="size-3.5" />
+              <Upload className="size-4" />
               {info.lastSyncAt > 0 ? t("Sync again") : t("Sync to Notion")}
             </Button>
           </div>
@@ -357,14 +357,14 @@ export function NotionSection() {
 
         {notice && (
           <div className="mt-2 flex items-start gap-1.5 rounded-md border border-brand/40 bg-brand-soft px-2 py-1.5 text-[11.5px] leading-relaxed">
-            <Check className="mt-[1px] size-3.5 shrink-0 text-brand" />
+            <Check className="mt-[1px] size-4 shrink-0 text-brand" />
             <span className="min-w-0 break-words">{notice}</span>
           </div>
         )}
 
         {error && (
           <div className="mt-2 flex items-start gap-1.5 rounded-md border border-destructive/35 px-2 py-1.5 text-[11.5px] leading-relaxed text-destructive">
-            <AlertTriangle className="mt-[1px] size-3.5 shrink-0" />
+            <AlertTriangle className="mt-[1px] size-4 shrink-0" />
             <span className="min-w-0 flex-1 break-words">{error}</span>
             <button
               type="button"
@@ -379,7 +379,7 @@ export function NotionSection() {
         {lastStats && (
           <div className="mt-3 rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
             <div className="flex items-center gap-2 text-[12.5px] font-medium">
-              <RefreshCw className="size-3.5 text-brand" />
+              <RefreshCw className="size-4 text-brand" />
               {t("Sync complete")}
             </div>
             <ul className="mt-1.5 space-y-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
@@ -448,7 +448,7 @@ export function NotionSection() {
             {lastStats.failures.length > 0 && (
               <div className="mt-2 rounded-md border border-destructive/35 px-2 py-1.5">
                 <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-destructive">
-                  <AlertTriangle className="size-3.5" />
+                  <AlertTriangle className="size-4" />
                   {t("{count} items could not be synced", { count: lastStats.failures.length })}
                 </div>
                 <ul className="mt-1 space-y-1">
@@ -476,7 +476,7 @@ export function NotionSection() {
                     void api.openUrl(lastStats.parentUrl).catch((err) => errorMessage(err))
                   }
                 >
-                  <ArrowUpRight className="size-3.5" />
+                  <ArrowUpRight className="size-4" />
                   {t("Open in Notion")}
                 </Button>
               </div>

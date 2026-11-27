@@ -8,7 +8,7 @@ export function RemoteSettingsBlocked() {
   if (!connected) return null;
   return (
     <div className="flex max-w-[520px] items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
-      <Wifi className="mt-0.5 size-3.5 shrink-0 text-brand" />
+      <Wifi className="mt-0.5 size-4 shrink-0 text-brand" />
       <span>{t("These settings apply to the local workspace. Disconnect from the remote host first.")}</span>
     </div>
   );

@@ -79,7 +79,7 @@ export function Sidebar() {
               aria-label={t("New document")}
               className="hover:bg-sidebar-hover"
             >
-              <Plus className="size-3.5" />
+              <Plus className="size-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t("New document")} {formatShortcut("⌘N")}</TooltipContent>
@@ -93,7 +93,7 @@ export function Sidebar() {
               aria-label={t("New folder")}
               className="hover:bg-sidebar-hover"
             >
-              <FolderPlus className="size-3.5" />
+              <FolderPlus className="size-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t("New folder")} {formatShortcut("⌘⇧N")}</TooltipContent>
@@ -108,9 +108,9 @@ export function Sidebar() {
               className="hover:bg-sidebar-hover"
             >
               {everythingOpen ? (
-                <ChevronsDownUp className="size-3.5" />
+                <ChevronsDownUp className="size-4" />
               ) : (
-                <ChevronsUpDown className="size-3.5" />
+                <ChevronsUpDown className="size-4" />
               )}
             </Button>
           </TooltipTrigger>
@@ -127,7 +127,7 @@ export function Sidebar() {
               aria-label={t("Collapse sidebar")}
               className="hover:bg-sidebar-hover"
             >
-              <PanelLeftClose className="size-3.5" />
+              <PanelLeftClose className="size-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t("Collapse sidebar")} {formatShortcut("⌘⇧\\")}</TooltipContent>
@@ -140,7 +140,7 @@ export function Sidebar() {
           className="flex h-7 w-full items-center gap-1.5 rounded-md border border-border/80 bg-background/60 px-2 text-[13.5px] text-muted-foreground transition-colors hover:border-brand/40 hover:bg-background hover:text-foreground/80"
           aria-label={t("Search")}
         >
-          <Search className="size-3.5 shrink-0 opacity-80" />
+          <Search className="size-4 shrink-0 opacity-80" />
           <span className="flex-1 truncate text-left">{t("Search titles and text")}</span>
           <kbd className="shrink-0 opacity-70">{formatShortcut("⌘K")}</kbd>
         </button>
@@ -162,7 +162,7 @@ export function Sidebar() {
               aria-label={t("Settings")}
               className="hover:bg-sidebar-hover"
             >
-              <Settings className="size-3.5" />
+              <Settings className="size-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t("Settings")}</TooltipContent>

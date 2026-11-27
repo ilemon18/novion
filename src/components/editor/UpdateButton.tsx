@@ -106,7 +106,7 @@ export function UpdateButton() {
         >
           <Icon
             className={cn(
-              "size-3.5 shrink-0",
+              "size-4 shrink-0",
               action.motion === "spin" && "animate-spin",
               action.motion === "pulse" && "animate-pulse",
             )}

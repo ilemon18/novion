@@ -81,7 +81,7 @@ export function StorageSection() {
   if (!info) {
     return (
       <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-        {loading ? <Loader2 className="size-3.5 animate-spin" /> : null}
+        {loading ? <Loader2 className="size-4 animate-spin" /> : null}
         {t("Reading storage status…")}
       </div>
     );
@@ -175,7 +175,7 @@ export function StorageSection() {
                     active ? "border-brand bg-brand text-brand-foreground" : "border-input",
                   )}
                 >
-                  {active && <Check className="size-2.5" strokeWidth={3} />}
+                  {active && <Check className="size-3" strokeWidth={3} />}
                 </span>
                 <span className="min-w-0">
                   <span className="block text-[12.5px] font-medium">{t(choice.label)}</span>
@@ -190,7 +190,7 @@ export function StorageSection() {
 
         {error && (
           <div className="mt-3 flex items-start gap-1.5 rounded-md border border-destructive/35 px-2 py-1.5 text-[11.5px] leading-relaxed text-destructive">
-            <AlertTriangle className="mt-[1px] size-3.5 shrink-0" />
+            <AlertTriangle className="mt-[1px] size-4 shrink-0" />
             <span className="min-w-0 break-words">{error}</span>
           </div>
         )}
@@ -201,7 +201,7 @@ export function StorageSection() {
           </Button>
           <Button variant="default" size="sm" onClick={() => void start()}>
             {t("Start switching")}
-            <ArrowRight className="size-3.5" />
+            <ArrowRight className="size-4" />
           </Button>
         </div>
       </div>
@@ -215,7 +215,7 @@ export function StorageSection() {
     return (
       <div className="py-6">
         <div className="flex items-center gap-2 text-[13px] font-medium">
-          <Loader2 className="size-3.5 animate-spin text-brand" />
+          <Loader2 className="size-4 animate-spin text-brand" />
           {progress?.phase === "merge" ? t("Merging data…") : t("Copying data…")}
         </div>
         <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -239,7 +239,7 @@ export function StorageSection() {
     return (
       <div>
         <div className="flex items-center gap-2 text-[13px] font-medium">
-          <Check className="size-4 text-brand" />
+          <Check className="size-4.5 text-brand" />
           {t("Switched to {destination}", {
             destination: info.storage === "icloud" ? t("iCloud Drive") : t("On this computer"),
           })}
@@ -284,7 +284,7 @@ export function StorageSection() {
               <div className="flex items-start gap-2">
                 <Icon
                   className={cn(
-                    "mt-[2px] size-4 shrink-0",
+                    "mt-[2px] size-4.5 shrink-0",
                     active ? "text-brand" : "text-muted-foreground",
                   )}
                   strokeWidth={1.8}
@@ -309,7 +309,7 @@ export function StorageSection() {
                   </div>
                   {card.disabled && (
                     <div className="mt-1.5 flex items-start gap-1 text-[11px] leading-relaxed text-destructive">
-                      <AlertTriangle className="mt-[1px] size-3 shrink-0" />
+                      <AlertTriangle className="mt-[1px] size-3.5 shrink-0" />
                       {t("iCloud Drive was not found. Sign in to iCloud in System Settings and turn on iCloud Drive.")}
                     </div>
                   )}
@@ -344,7 +344,7 @@ export function StorageSection() {
             void api.revealStorageFolder().catch((err) => errorMessage(err));
           }}
         >
-          <FolderOpen className="size-3.5" />
+          <FolderOpen className="size-4" />
           {t("Show in folder")}
         </Button>
       </div>
@@ -352,7 +352,7 @@ export function StorageSection() {
       <div className="mt-4 rounded-lg border border-border/70 px-3 py-2.5">
         <div className="flex items-start gap-2">
           <PackageOpen
-            className="mt-[2px] size-4 shrink-0 text-muted-foreground"
+            className="mt-[2px] size-4.5 shrink-0 text-muted-foreground"
             strokeWidth={1.8}
           />
           <div className="min-w-0 flex-1">
@@ -375,9 +375,9 @@ export function StorageSection() {
                 }}
               >
                 {exporting ? (
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <PackageOpen className="size-3.5" />
+                  <PackageOpen className="size-4" />
                 )}
                 {t("Back up the whole workspace")}
               </Button>
@@ -391,7 +391,7 @@ export function StorageSection() {
                     });
                   }}
                 >
-                  <FolderOpen className="size-3.5" />
+                  <FolderOpen className="size-4" />
                   {t("Show in folder")}
                 </Button>
               )}

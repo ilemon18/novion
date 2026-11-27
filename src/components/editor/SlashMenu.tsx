@@ -66,7 +66,7 @@ export function SlashMenu() {
               )}
             >
               <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background">
-                <Icon className="size-3.5 opacity-80" strokeWidth={1.75} />
+                <Icon className="size-4 opacity-80" strokeWidth={1.75} />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] leading-tight">{t(item.title)}</span>

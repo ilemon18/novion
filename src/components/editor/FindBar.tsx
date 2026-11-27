@@ -187,7 +187,7 @@ export function FindBar({ editor, onClose, initialQuery = "" }: Props) {
           disabled={!matches.length}
           className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
         >
-          <ChevronUp className="size-3.5" />
+          <ChevronUp className="size-4" />
         </button>
         <button
           type="button"
@@ -196,7 +196,7 @@ export function FindBar({ editor, onClose, initialQuery = "" }: Props) {
           disabled={!matches.length}
           className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
         >
-          <ChevronDown className="size-3.5" />
+          <ChevronDown className="size-4" />
         </button>
         <button
           type="button"
@@ -208,7 +208,7 @@ export function FindBar({ editor, onClose, initialQuery = "" }: Props) {
             replaceOpen ? "text-brand" : "text-muted-foreground/70",
           )}
         >
-          <Replace className="size-3.5" />
+          <Replace className="size-4" />
         </button>
         <button
           type="button"
@@ -216,7 +216,7 @@ export function FindBar({ editor, onClose, initialQuery = "" }: Props) {
           onClick={onClose}
           className="flex size-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
         >
-          <X className="size-3.5" />
+          <X className="size-4" />
         </button>
       </div>
 

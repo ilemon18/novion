@@ -47,7 +47,7 @@ function SharingModeRow({
           status ? "bg-card text-brand" : "bg-muted text-muted-foreground",
         )}
       >
-        <Icon className="size-4" strokeWidth={1.8} />
+        <Icon className="size-4.5" strokeWidth={1.8} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-medium">{title}</span>
@@ -56,7 +56,7 @@ function SharingModeRow({
         ) : null}
       </span>
       {status ? <SharingStatusPill>{status}</SharingStatusPill> : null}
-      {blocked ? null : <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
+      {blocked ? null : <ChevronRight className="size-4.5 shrink-0 text-muted-foreground" />}
     </button>
   );
 }
@@ -121,7 +121,7 @@ export function SharingSection() {
     <div className="max-w-[560px] space-y-3">
       {conflict && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-          <AlertTriangle className="size-3.5 shrink-0" />
+          <AlertTriangle className="size-4 shrink-0" />
           <span className="min-w-0 flex-1">{t("Can't share and connect at the same time.")}</span>
           <Button
             size="sm"

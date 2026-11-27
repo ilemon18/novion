@@ -222,7 +222,7 @@ export default function App() {
                     aria-label={t("Expand sidebar")}
                     className="rounded-md text-muted-foreground/75 hover:bg-accent hover:text-foreground"
                   >
-                    <PanelLeft className="size-4" strokeWidth={1.7} />
+                    <PanelLeft className="size-4.5" strokeWidth={1.7} />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">{t("Expand sidebar")} {formatShortcut("⌘⇧\\")}</TooltipContent>
@@ -283,13 +283,13 @@ export default function App() {
                   notice.tone === "info" && "border-border",
                 )}
               >
-                <span className="flex size-4 shrink-0 items-center justify-center">
+                <span className="flex size-4.5 shrink-0 items-center justify-center">
                   {notice.tone === "error" ? (
-                    <TriangleAlert className="size-3.5 text-destructive" />
+                    <TriangleAlert className="size-4 text-destructive" />
                   ) : notice.tone === "success" ? (
-                    <CheckCircle2 className="size-3.5 text-success" />
+                    <CheckCircle2 className="size-4 text-success" />
                   ) : (
-                    <Info className="size-3.5 text-brand" />
+                    <Info className="size-4 text-brand" />
                   )}
                 </span>
                 <span className="min-w-0 flex-1 break-words leading-snug">{notice.text}</span>
@@ -313,15 +313,15 @@ export default function App() {
                   aria-label={t("Dismiss")}
                   className="-mr-1 shrink-0"
                 >
-                  <X className="size-3.5" />
+                  <X className="size-4" />
                 </Button>
               </div>
             )}
 
             {error && (
               <div className="anim-fade pointer-events-auto flex max-w-[min(560px,90vw)] items-center gap-2 rounded-lg border border-destructive/35 bg-popover px-3 py-2 text-[12.5px] shadow-popover">
-                <span className="flex size-4 shrink-0 items-center justify-center text-destructive">
-                  <TriangleAlert className="size-3.5" />
+                <span className="flex size-4.5 shrink-0 items-center justify-center text-destructive">
+                  <TriangleAlert className="size-4" />
                 </span>
                 <span className="min-w-0 flex-1 break-words leading-snug">{error}</span>
                 <Button
@@ -331,7 +331,7 @@ export default function App() {
                   aria-label={t("Dismiss")}
                   className="-mr-1 shrink-0"
                 >
-                  <X className="size-3.5" />
+                  <X className="size-4" />
                 </Button>
               </div>
             )}

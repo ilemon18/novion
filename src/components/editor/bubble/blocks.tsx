@@ -52,7 +52,7 @@ export function BlockPicker({ editor, open, onToggle, onClose }: PanelControlPro
         className="flex h-7 items-center gap-1 rounded-md px-1.5 text-[12.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
       >
         {t(BLOCK_LABEL[block] ?? "Text")}
-        <ChevronDown className="size-3 opacity-60" />
+        <ChevronDown className="size-3.5 opacity-60" />
       </button>
       {open && (
         <Panel width={148}>

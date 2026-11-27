@@ -65,7 +65,7 @@ export function SharingClientPage({ onBack }: { onBack: () => void }) {
       {connected ? (
         <div className="mt-4 rounded-lg border border-brand/40 bg-brand-soft/60 p-3">
           <div className="flex items-center gap-2">
-            <Check className="size-4 shrink-0 text-brand" />
+            <Check className="size-4.5 shrink-0 text-brand" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12.5px] font-medium">{status?.hostName}</div>
               <div className="truncate text-[10.5px] text-muted-foreground">
@@ -79,7 +79,7 @@ export function SharingClientPage({ onBack }: { onBack: () => void }) {
           </div>
           <div className="mt-3 flex gap-2">
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void disconnect()}>
-              <Unplug className="size-3.5" />
+              <Unplug className="size-4" />
               {t("Disconnect")}
             </Button>
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => void forget()}>
@@ -116,7 +116,7 @@ export function SharingClientPage({ onBack }: { onBack: () => void }) {
               {t("Local network")}
             </div>
             <Button size="sm" variant="outline" disabled={scanning || busy} onClick={() => void scan()}>
-              {scanning ? <Loader2 className="size-3.5 animate-spin" /> : <Wifi className="size-3.5" />}
+              {scanning ? <Loader2 className="size-4 animate-spin" /> : <Wifi className="size-4" />}
               {t("Scan")}
             </Button>
           </div>
@@ -133,14 +133,14 @@ export function SharingClientPage({ onBack }: { onBack: () => void }) {
                     selected?.hostId === host.hostId && "bg-brand-soft/60",
                   )}
                 >
-                  <Laptop className="size-3.5 shrink-0 text-muted-foreground" />
+                  <Laptop className="size-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[11.5px]">{host.hostName}</div>
                     <div className="truncate text-[10px] text-muted-foreground">
                       {host.address}:{host.port} · {host.workspaceName}
                     </div>
                   </div>
-                  {selected?.hostId === host.hostId && <Check className="size-3.5 text-brand" />}
+                  {selected?.hostId === host.hostId && <Check className="size-4 text-brand" />}
                 </button>
               ))}
             </div>
@@ -164,7 +164,7 @@ export function SharingClientPage({ onBack }: { onBack: () => void }) {
                   className="font-mono tracking-[0.08em]"
                 />
                 <Button size="sm" disabled={busy || !pairingCode.trim()} onClick={() => void connectSelected()}>
-                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                  {busy ? <Loader2 className="size-4 animate-spin" /> : null}
                   {t("Connect")}
                 </Button>
               </div>

@@ -222,9 +222,9 @@ export function VersionHistoryDialog({ docId, onRestored }: Props) {
             onClick={() => void createSnapshot()}
           >
             {creating ? (
-              <Loader2 className="size-3 animate-spin" />
+              <Loader2 className="size-3.5 animate-spin" />
             ) : (
-              <Camera className="size-3" />
+              <Camera className="size-3.5" />
             )}
             {t("Save a version")}
           </Button>
@@ -234,12 +234,12 @@ export function VersionHistoryDialog({ docId, onRestored }: Props) {
           <div className="max-h-[min(420px,52vh)] overflow-y-auto rounded-lg border border-border/70">
             {versions === null ? (
               <div className="flex items-center gap-2 px-3 py-6 text-[12.5px] text-muted-foreground">
-                <Loader2 className="size-3.5 animate-spin" />
+                <Loader2 className="size-4 animate-spin" />
                 {t("Loading version history…")}
               </div>
             ) : versions.length === 0 ? (
               <div className="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
-                <History className="size-5 text-muted-foreground/50" strokeWidth={1.6} />
+                <History className="size-5.5 text-muted-foreground/50" strokeWidth={1.6} />
                 <p className="text-[12.5px] text-muted-foreground">{t("No versions yet")}</p>
               </div>
             ) : (
@@ -286,7 +286,7 @@ export function VersionHistoryDialog({ docId, onRestored }: Props) {
                     : "text-muted-foreground hover:bg-accent/60",
                 )}
               >
-                <GitCompare className="size-3" />
+                <GitCompare className="size-3.5" />
                 {t("Compare with current")}
               </button>
               <button
@@ -311,7 +311,7 @@ export function VersionHistoryDialog({ docId, onRestored }: Props) {
             <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 text-[12px] leading-[1.6]">
               {bodyLoading ? (
                 <div className="flex items-center gap-2 px-1 py-3 text-[12px] text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                   {t("Loading…")}
                 </div>
               ) : !body ? (
@@ -392,9 +392,9 @@ export function VersionHistoryDialog({ docId, onRestored }: Props) {
               }}
             >
               {restoring != null ? (
-                <Loader2 className="size-3 animate-spin" />
+                <Loader2 className="size-3.5 animate-spin" />
               ) : (
-                <RotateCcw className="size-3" />
+                <RotateCcw className="size-3.5" />
               )}
               {confirming ? t("Confirm restore") : t("Restore this version")}
             </Button>

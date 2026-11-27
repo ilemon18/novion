@@ -436,7 +436,7 @@ export default function DocView({ docId }: { docId: string }) {
             <span className="shrink-0 opacity-80">Novion</span>
             {crumbs.map((crumb) => (
               <span key={crumb.id} className="flex min-w-0 items-center gap-1">
-                <ChevronRight className="size-3 shrink-0 opacity-50" />
+                <ChevronRight className="size-3.5 shrink-0 opacity-50" />
                 {crumb.builtin ? (
                   // system folders live in their own sidebar section, so
                   // they are part of the path but not a jump target
@@ -463,8 +463,8 @@ export default function DocView({ docId }: { docId: string }) {
             ))}
             {pinned && (
               <>
-                <ChevronRight className="size-3 shrink-0 opacity-50" />
-                <Pin className="size-3 shrink-0 rotate-45 text-brand" strokeWidth={2} />
+                <ChevronRight className="size-3.5 shrink-0 opacity-50" />
+                <Pin className="size-3.5 shrink-0 rotate-45 text-brand" strokeWidth={2} />
               </>
             )}
           </nav>
@@ -487,7 +487,7 @@ export default function DocView({ docId }: { docId: string }) {
                     : t("This document is archived.")}
                 </span>
                 <Button size="sm" variant="outline" onClick={() => void restore(docId)}>
-                  <RotateCcw className="size-3.5" />
+                  <RotateCcw className="size-4" />
                   {t("Restore")}
                 </Button>
               </div>
@@ -553,9 +553,9 @@ export default function DocView({ docId }: { docId: string }) {
                         aria-label={pinned ? t("Unpin") : t("Pin")}
                       >
                         {pinned ? (
-                          <PinOff className="size-4" strokeWidth={1.7} />
+                          <PinOff className="size-4.5" strokeWidth={1.7} />
                         ) : (
-                          <Pin className="size-4" strokeWidth={1.7} />
+                          <Pin className="size-4.5" strokeWidth={1.7} />
                         )}
                       </DocActionButton>
                     </TooltipTrigger>
@@ -586,7 +586,7 @@ export default function DocView({ docId }: { docId: string }) {
                         aria-label={outlineOpen ? t("Hide outline") : t("Show outline")}
                         aria-pressed={outlineOpen}
                       >
-                        <ListTree className="size-4" strokeWidth={1.7} />
+                        <ListTree className="size-4.5" strokeWidth={1.7} />
                       </DocActionButton>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">
@@ -636,7 +636,7 @@ export default function DocView({ docId }: { docId: string }) {
             {backlinks.length > 0 && (
               <section className="mt-10 border-t border-border/70 pt-3">
                 <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                  <Link2 className="size-3" strokeWidth={2} />
+                  <Link2 className="size-3.5" strokeWidth={2} />
                   {t("Backlinks")}
                   <span className="tabular-nums opacity-70">{backlinks.length}</span>
                 </div>
@@ -648,7 +648,7 @@ export default function DocView({ docId }: { docId: string }) {
                         onClick={() => useWorkspace.getState().reveal(link.id)}
                         className="group flex w-full items-start gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-accent/60"
                       >
-                        <ArrowUpRight className="mt-[3px] size-3 shrink-0 text-muted-foreground/70" />
+                        <ArrowUpRight className="mt-[3px] size-3.5 shrink-0 text-muted-foreground/70" />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[13px] font-medium">
                             {link.title || t("Untitled")}

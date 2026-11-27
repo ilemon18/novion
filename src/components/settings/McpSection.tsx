@@ -80,7 +80,7 @@ export function McpSection() {
   if (loading && !status) {
     return (
       <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" />
+        <Loader2 className="size-4 animate-spin" />
         {t("Loading MCP settings…")}
       </div>
     );
@@ -160,7 +160,7 @@ export function McpSection() {
 
         {status && !status.requireToken ? (
           <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
-            <AlertTriangle className="mt-[1px] size-3.5 shrink-0" />
+            <AlertTriangle className="mt-[1px] size-4 shrink-0" />
             <span className="min-w-0 break-words">
               {t("Token authentication is off. While the server is running, any app on this computer can access notes through it.")}
             </span>
@@ -179,7 +179,7 @@ export function McpSection() {
                 onClick={() => setShowToken((value) => !value)}
                 aria-label={t(showToken ? "Hide token" : "Show token")}
               >
-                {showToken ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+                {showToken ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                 {t(showToken ? "Hide token" : "Show token")}
               </button>
             </div>
@@ -201,12 +201,12 @@ export function McpSection() {
               disabled={busy || status.running}
               onClick={() => void run(api.mcpRotateToken)}
             >
-              <RotateCcw className="size-3.5" />
+              <RotateCcw className="size-4" />
               {t("Rotate token")}
             </Button>
           ) : null}
           <Button size="sm" variant="outline" disabled={!status} onClick={() => void copyConnection()}>
-            <Copy className="size-3.5" />
+            <Copy className="size-4" />
             {t("Copy connection details")}
           </Button>
         </div>
@@ -215,12 +215,12 @@ export function McpSection() {
       <div className="mt-3 flex gap-2">
         {status?.running ? (
           <Button size="sm" variant="destructive" disabled={busy} onClick={() => void run(api.mcpStop)}>
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-4" />}
             {t("Stop server")}
           </Button>
         ) : (
           <Button size="sm" disabled={busy || !status} onClick={() => void run(api.mcpStart)}>
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
             {t("Start server")}
           </Button>
         )}
@@ -228,7 +228,7 @@ export function McpSection() {
 
       {error ? (
         <div className="mt-3 flex items-start gap-1.5 rounded-md border border-destructive/35 px-2 py-1.5 text-[11.5px] leading-relaxed text-destructive">
-          <AlertTriangle className="mt-[1px] size-3.5 shrink-0" />
+          <AlertTriangle className="mt-[1px] size-4 shrink-0" />
           <span className="min-w-0 break-words">{error}</span>
         </div>
       ) : null}

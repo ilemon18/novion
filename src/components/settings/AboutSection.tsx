@@ -95,7 +95,7 @@ export function AboutSection() {
         >
           <Icon
             className={cn(
-              "size-3.5",
+              "size-4",
               action.motion === "spin" && "animate-spin",
               action.motion === "pulse" && "animate-pulse",
             )}
@@ -111,7 +111,7 @@ export function AboutSection() {
               .catch((err) => notify(errorMessage(err), { tone: "error", timeout: 6000 }))
           }
         >
-          <FolderOpen className="size-3.5" />
+          <FolderOpen className="size-4" />
           {t("Show in folder")}
         </Button>
       </div>

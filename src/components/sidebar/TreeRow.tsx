@@ -222,7 +222,7 @@ function TreeRowImpl(props: TreeRowProps) {
       {isFolder ? (
         <ChevronRight
           className={cn(
-            "size-3 shrink-0 text-muted-foreground transition-transform duration-150",
+            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
             expanded && "rotate-90",
           )}
           onClick={(e) => {
@@ -231,18 +231,18 @@ function TreeRowImpl(props: TreeRowProps) {
           }}
         />
       ) : (
-        <span className="w-3 shrink-0" />
+        <span className="w-3.5 shrink-0" />
       )}
 
       {isFolder ? (
         expanded ? (
-          <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+          <FolderOpen className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
         ) : (
-          <Folder className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+          <Folder className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
         )
       ) : editing ? (
         <FileText
-          className={cn("size-3.5 shrink-0", pinned ? "text-brand" : "text-muted-foreground/80")}
+          className={cn("size-4 shrink-0", pinned ? "text-brand" : "text-muted-foreground/80")}
           strokeWidth={1.8}
         />
       ) : (
@@ -255,17 +255,17 @@ function TreeRowImpl(props: TreeRowProps) {
           }}
           title={t("Archive")}
           aria-label={t("Archive")}
-          className="group/tick relative size-3.5 shrink-0 outline-none"
+          className="group/tick relative size-4 shrink-0 outline-none"
         >
           <FileText
             className={cn(
-              "absolute inset-0 size-3.5 transition-opacity duration-100 group-hover/tick:opacity-0",
+              "absolute inset-0 size-4 transition-opacity duration-100 group-hover/tick:opacity-0",
               pinned ? "text-brand" : "text-muted-foreground/80",
             )}
             strokeWidth={1.8}
           />
           <Square
-            className="absolute inset-0 size-3.5 text-muted-foreground/70 opacity-0 transition-opacity duration-100 group-hover/tick:opacity-100 hover:text-brand"
+            className="absolute inset-0 size-4 text-muted-foreground/70 opacity-0 transition-opacity duration-100 group-hover/tick:opacity-100 hover:text-brand"
             strokeWidth={1.7}
           />
         </button>
@@ -296,7 +296,7 @@ function TreeRowImpl(props: TreeRowProps) {
           />
           {pinned && (
             <Pin
-              className="size-3 shrink-0 rotate-45 text-brand"
+              className="size-3.5 shrink-0 rotate-45 text-brand"
               strokeWidth={2}
               aria-label={t("Pinned")}
             />
@@ -321,7 +321,7 @@ function TreeRowImpl(props: TreeRowProps) {
               )}
               aria-label={t("Item actions")}
             >
-              <MoreHorizontal className="size-3.5" />
+              <MoreHorizontal className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent onClick={(e) => e.stopPropagation()} className="min-w-40">

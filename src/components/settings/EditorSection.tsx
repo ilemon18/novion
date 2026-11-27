@@ -67,7 +67,7 @@ export function EditorSection() {
       <div className="divide-y divide-border/70 rounded-lg border border-border/70">
         {FEATURES.map((item) => (
           <div key={item.key} className="flex items-center gap-2.5 px-3 py-2.5">
-            <item.icon className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.7} />
+            <item.icon className="size-4.5 shrink-0 text-muted-foreground" strokeWidth={1.7} />
             <div className="min-w-0 flex-1 text-[12.5px] font-medium leading-tight">
               {t(item.label)}
             </div>

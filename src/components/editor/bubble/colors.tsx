@@ -36,7 +36,7 @@ export function TextColorControl({ editor, open, onToggle, onClose }: PanelContr
   return (
     <div className="relative">
       <ToolButton title={t("Text color")} active={editor.isActive("textStyle")} onClick={onToggle}>
-        <Baseline className="size-3.5" />
+        <Baseline className="size-4" />
       </ToolButton>
       {open && (
         <Panel width={168}>
@@ -63,7 +63,7 @@ export function HighlightControl({ editor, open, onToggle, onClose }: PanelContr
   return (
     <div className="relative">
       <ToolButton title={t("Highlight")} active={editor.isActive("highlight")} onClick={onToggle}>
-        <Highlighter className="size-3.5" />
+        <Highlighter className="size-4" />
       </ToolButton>
       {open && (
         <Panel width={168}>
@@ -129,7 +129,7 @@ function Swatches({
               )}
               style={color.value ? { background: color.value } : undefined}
             >
-              {none && <Ban className="size-3.5" strokeWidth={1.6} />}
+              {none && <Ban className="size-4" strokeWidth={1.6} />}
             </button>
           );
         })}

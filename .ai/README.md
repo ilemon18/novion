@@ -2,9 +2,10 @@
 
 ## For AI Agents
 
-**Start here**: Read `context.md` (~13KB, 236 lines) - it has:
+**Start here**: Read `context.md` (~14KB, 259 lines) - it has:
 - File navigation map (where everything is)
 - Core rules (must-follow conventions)
+- Verification policy (automated checks only; no GUI unless asked)
 - Common task patterns
 - Critical gotchas
 
@@ -18,9 +19,9 @@ Start with `../README.md` for full project overview.
 
 | File | Size | Lines | Purpose |
 |------|------|-------|---------|
-| `context.md` | 13KB | 236 | Entry point (read every session) |
+| `context.md` | 14KB | 259 | Entry point (read every session) |
 
-**Total**: ~13KB / 236 lines
+**Total**: ~14KB / 259 lines
 
 ## Maintenance
 

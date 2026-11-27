@@ -79,6 +79,29 @@ export async function myCommand(param: string): Promise<Data> {
 }
 ```
 
+## Verification & Testing
+
+Verify headlessly. Run only what covers the change:
+
+| Changed | Run |
+|---------|-----|
+| TS/React UI code | `pnpm build` (tsc --noEmit + vite build) |
+| Frontend logic | `pnpm test` (vitest) |
+| Rust (`src-tauri/`) | `cargo test --manifest-path src-tauri/Cargo.toml` |
+| User-facing strings | `pnpm check:i18n` |
+
+### Do not GUI-test by default
+
+- **No app launch unless asked**: do not run `pnpm app:dev` / `pnpm app:build`,
+  and do not drive the UI (clicks, screenshots, Playwright, tauri-driver,
+  cua-driver) unless the user explicitly requests GUI or manual testing.
+- Hand-off evidence is the automated result: report the commands you ran and
+  anything you skipped.
+- If something truly cannot be verified headlessly, state why and ask before
+  opening the app.
+- When GUI testing *is* requested: exercise the named flow with `pnpm app:dev`,
+  then stop the process. Never launch from `src-tauri/target/`.
+
 ## Common Tasks
 
 ### Add Rust Command
@@ -181,10 +204,10 @@ lib.rs → workspace/docs/assets.rs
 
 ## Debug
 
-**Frontend**: DevTools in `pnpm app:dev`
+**Frontend**: DevTools in `pnpm app:dev` (only when the user asks for GUI debugging)
 **Backend**: `eprintln!("[DEBUG] {:?}", var);` or `dbg!(var);`
 **IPC**: Log in `tauri.ts` wrapper
-**Tests**: `cd src-tauri && cargo test`
+**Tests**: see [Verification & Testing](#verification--testing)
 
 **Packaging**: only the debug build is shipped, and it always lands in `release/`:
 `Novion-debug.app` on macOS (`pnpm app:build`), `Novion-debug-setup.exe` on Windows
@@ -233,4 +256,4 @@ replaced by a release bundle. The UI has exactly these states and one button eac
 
 ---
 
-**Last updated**: 2026-11-26
+**Last updated**: 2026-11-27

@@ -202,11 +202,11 @@ export function BuiltinSections() {
               >
                 <ChevronRight
                   className={cn(
-                    "size-3 shrink-0 text-muted-foreground transition-transform duration-150",
+                    "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
                     isOpen && "rotate-90",
                   )}
                 />
-                <Icon className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+                <Icon className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
                 <span className="min-w-0 flex-1 truncate">{t(section.label)}</span>
               </button>
 
@@ -225,7 +225,7 @@ export function BuiltinSections() {
                         className="opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
                         aria-label={t("Trash actions")}
                       >
-                        <Trash2 className="size-3.5" />
+                        <Trash2 className="size-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
@@ -274,12 +274,12 @@ export function BuiltinSections() {
                         )}
                         {isFolder ? (
                           <Folder
-                            className="size-3.5 shrink-0 text-muted-foreground"
+                            className="size-4 shrink-0 text-muted-foreground"
                             strokeWidth={1.8}
                           />
                         ) : (
                           <FileText
-                            className="size-3.5 shrink-0 text-muted-foreground/80"
+                            className="size-4 shrink-0 text-muted-foreground/80"
                             strokeWidth={1.8}
                           />
                         )}
@@ -305,7 +305,7 @@ export function BuiltinSections() {
                               )}
                               aria-label={t("Item actions")}
                             >
-                              <MoreHorizontal className="size-3.5" />
+                              <MoreHorizontal className="size-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent onClick={(e) => e.stopPropagation()}>

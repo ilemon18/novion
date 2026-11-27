@@ -35,7 +35,7 @@ export function RemoteBadge() {
               : "border-brand/30 bg-brand-soft text-brand",
           )}
         >
-          <Wifi className="size-3.5 shrink-0" />
+          <Wifi className="size-4 shrink-0" />
           <span className="min-w-0 truncate">{status.hostName}</span>
         </button>
       </TooltipTrigger>

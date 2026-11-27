@@ -138,7 +138,7 @@ export function SettingsDialog() {
                     <span className="absolute inset-y-[7px] left-0 w-[2px] rounded-full bg-brand" />
                   )}
                   <section.icon
-                    className={cn("size-3.5", isActive ? "text-brand" : "text-muted-foreground")}
+                    className={cn("size-4", isActive ? "text-brand" : "text-muted-foreground")}
                     strokeWidth={1.8}
                   />
                   <span className="truncate">{t(section.label)}</span>
@@ -154,7 +154,7 @@ export function SettingsDialog() {
               </div>
               <DialogClose asChild>
                 <Button size="iconSm" variant="ghost" aria-label={t("Close settings")}>
-                  <X className="size-3.5" />
+                  <X className="size-4" />
                 </Button>
               </DialogClose>
             </div>

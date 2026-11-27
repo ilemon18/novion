@@ -120,7 +120,7 @@ export function SharingHostPage({ onBack }: { onBack: () => void }) {
       {running && (
         <div className="mt-4 space-y-3 border-t border-border/70 pt-3">
           <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground">
-            <Wifi className="size-3.5 shrink-0 text-brand" />
+            <Wifi className="size-4 shrink-0 text-brand" />
             <span className="min-w-0 break-all font-mono text-[11px] text-foreground/80">
               {(share?.addresses ?? []).map((ip) => `https://${ip}:${share?.port}`).join("  ·  ")}
             </span>
@@ -129,7 +129,7 @@ export function SharingHostPage({ onBack }: { onBack: () => void }) {
           <div className="rounded-md bg-muted/55 px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                <KeyRound className="size-3.5" />
+                <KeyRound className="size-4" />
                 {t("Pairing code")}
               </div>
               <div className="flex gap-1">
@@ -140,7 +140,7 @@ export function SharingHostPage({ onBack }: { onBack: () => void }) {
                   disabled={!share?.pairingCode}
                   onClick={() => share?.pairingCode && void copy(share.pairingCode)}
                 >
-                  <Copy className="size-3.5" />
+                  <Copy className="size-4" />
                 </Button>
                 <Button
                   size="iconSm"
@@ -148,7 +148,7 @@ export function SharingHostPage({ onBack }: { onBack: () => void }) {
                   aria-label={t("New pairing code")}
                   onClick={() => void newPairingCode()}
                 >
-                  <RefreshCw className="size-3.5" />
+                  <RefreshCw className="size-4" />
                 </Button>
               </div>
             </div>
@@ -165,14 +165,14 @@ export function SharingHostPage({ onBack }: { onBack: () => void }) {
           </div>
 
           <div className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
-            <ShieldCheck className="size-3.5 shrink-0" />
+            <ShieldCheck className="size-4 shrink-0" />
             <span>{t("Certificate fingerprint")}</span>
             <span className="selectable truncate font-mono">{share?.fingerprint}</span>
           </div>
 
           {share?.discoveryError && (
             <div className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
-              <AlertTriangle className="mt-[1px] size-3.5 shrink-0" />
+              <AlertTriangle className="mt-[1px] size-4 shrink-0" />
               <span>{t("Automatic discovery is unavailable. Use the manual address instead.")}</span>
             </div>
           )}
@@ -188,7 +188,7 @@ export function SharingHostPage({ onBack }: { onBack: () => void }) {
                     key={device.id}
                     className="flex items-center gap-2 border-b border-border/60 px-2.5 py-2 last:border-b-0"
                   >
-                    <Laptop className="size-3.5 shrink-0 text-muted-foreground" />
+                    <Laptop className="size-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[11.5px]">{device.name}</div>
                       <div className="text-[10px] text-muted-foreground">
@@ -217,12 +217,12 @@ export function SharingHostPage({ onBack }: { onBack: () => void }) {
       <div className="mt-4 flex gap-2">
         {running ? (
           <Button size="sm" variant="destructive" disabled={busy} onClick={() => void stopShare()}>
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Square className="size-4" />}
             {t("Stop sharing")}
           </Button>
         ) : (
           <Button size="sm" disabled={busy} onClick={() => void startShare()}>
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
             {t("Start sharing")}
           </Button>
         )}

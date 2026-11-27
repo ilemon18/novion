@@ -18,7 +18,7 @@ export function GeneralSection() {
         <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
           {t("Language")}
         </div>
-        <Languages className="size-3.5 text-muted-foreground" strokeWidth={1.8} />
+        <Languages className="size-4 text-muted-foreground" strokeWidth={1.8} />
       </div>
 
       <div className="mt-2 overflow-hidden rounded-lg border border-border">
@@ -35,7 +35,7 @@ export function GeneralSection() {
               )}
             >
               <span className="min-w-0 flex-1 truncate">{LOCALE_LABELS[option]}</span>
-              {active && <Check className="size-3.5 shrink-0 text-brand" />}
+              {active && <Check className="size-4 shrink-0 text-brand" />}
             </button>
           );
         })}

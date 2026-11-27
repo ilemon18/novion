@@ -29,7 +29,7 @@ export function DocMenu({ docId }: { docId: string }) {
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <DocActionButton aria-label={t("More actions")} aria-haspopup="menu">
-              <MoreHorizontal className="size-4" strokeWidth={1.7} />
+              <MoreHorizontal className="size-4.5" strokeWidth={1.7} />
             </DocActionButton>
           </DropdownMenuTrigger>
         </TooltipTrigger>

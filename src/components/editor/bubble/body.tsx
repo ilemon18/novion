@@ -74,35 +74,35 @@ export const BubbleContent = memo(function BubbleContent({ editor }: ContentProp
         active={editor.isActive("bold")}
         onClick={() => editor.chain().focus().toggleBold().run()}
       >
-        <Bold className="size-3.5" />
+        <Bold className="size-4" />
       </ToolButton>
       <ToolButton
         title={formatShortcut(t("Italic ⌘I"))}
         active={editor.isActive("italic")}
         onClick={() => editor.chain().focus().toggleItalic().run()}
       >
-        <Italic className="size-3.5" />
+        <Italic className="size-4" />
       </ToolButton>
       <ToolButton
         title={formatShortcut(t("Underline ⌘U"))}
         active={editor.isActive("underline")}
         onClick={() => editor.chain().focus().toggleUnderline().run()}
       >
-        <UnderlineIcon className="size-3.5" />
+        <UnderlineIcon className="size-4" />
       </ToolButton>
       <ToolButton
         title={t("Strikethrough")}
         active={editor.isActive("strike")}
         onClick={() => editor.chain().focus().toggleStrike().run()}
       >
-        <Strikethrough className="size-3.5" />
+        <Strikethrough className="size-4" />
       </ToolButton>
       <ToolButton
         title={t("Inline code")}
         active={editor.isActive("code")}
         onClick={() => editor.chain().focus().toggleCode().run()}
       >
-        <CodeIcon className="size-3.5" />
+        <CodeIcon className="size-4" />
       </ToolButton>
 
       <Sep />
@@ -143,21 +143,21 @@ function MoreMenu({ editor, open, onToggle, onClose }: {
         onClick={onToggle}
         className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
       >
-        <ChevronDown className="size-3.5" />
+        <ChevronDown className="size-4" />
       </button>
       {open && (
         <Panel align="end" width={150}>
           <PanelItem onClick={() => run(() => editor.chain().focus().toggleSuperscript().run())}>
-            <Superscript className="size-3.5" />
+            <Superscript className="size-4" />
             {t("Superscript")}
           </PanelItem>
           <PanelItem onClick={() => run(() => editor.chain().focus().toggleSubscript().run())}>
-            <Subscript className="size-3.5" />
+            <Subscript className="size-4" />
             {t("Subscript")}
           </PanelItem>
           <div className="my-1 h-px bg-border" />
           <PanelItem onClick={() => run(() => editor.chain().focus().unsetAllMarks().run())}>
-            <Eraser className="size-3.5" />
+            <Eraser className="size-4" />
             {t("Clear formatting")}
           </PanelItem>
         </Panel>

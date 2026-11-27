@@ -34,9 +34,9 @@ export function TableActions({ editor, open, onToggle, onClose }: PanelControlPr
         onClick={onToggle}
         className="flex h-7 items-center gap-1 rounded-md px-1.5 text-[12px] text-muted-foreground hover:bg-accent hover:text-foreground"
       >
-        <TableCellsMerge className="size-3.5" />
+        <TableCellsMerge className="size-4" />
         {t("Table")}
-        <ChevronDown className="size-3 opacity-60" />
+        <ChevronDown className="size-3.5 opacity-60" />
       </button>
       {open && (
         <Panel align="end" width={176}>
@@ -44,28 +44,28 @@ export function TableActions({ editor, open, onToggle, onClose }: PanelControlPr
             disabled={!editor.can().addRowBefore()}
             onClick={() => run(() => editor.chain().focus().addRowBefore().run())}
           >
-            <ArrowUpToLine className="size-3.5" />
+            <ArrowUpToLine className="size-4" />
             {t("Insert row above")}
           </PanelItem>
           <PanelItem
             disabled={!editor.can().addRowAfter()}
             onClick={() => run(() => editor.chain().focus().addRowAfter().run())}
           >
-            <ArrowDownToLine className="size-3.5" />
+            <ArrowDownToLine className="size-4" />
             {t("Insert row below")}
           </PanelItem>
           <PanelItem
             disabled={!editor.can().addColumnBefore()}
             onClick={() => run(() => editor.chain().focus().addColumnBefore().run())}
           >
-            <ArrowLeftToLine className="size-3.5" />
+            <ArrowLeftToLine className="size-4" />
             {t("Insert column left")}
           </PanelItem>
           <PanelItem
             disabled={!editor.can().addColumnAfter()}
             onClick={() => run(() => editor.chain().focus().addColumnAfter().run())}
           >
-            <ArrowRightToLine className="size-3.5" />
+            <ArrowRightToLine className="size-4" />
             {t("Insert column right")}
           </PanelItem>
           <div className="my-1 h-px bg-border" />
@@ -73,14 +73,14 @@ export function TableActions({ editor, open, onToggle, onClose }: PanelControlPr
             disabled={!editor.can().mergeCells()}
             onClick={() => run(() => editor.chain().focus().mergeCells().run())}
           >
-            <TableCellsMerge className="size-3.5" />
+            <TableCellsMerge className="size-4" />
             {t("Merge cells")}
           </PanelItem>
           <PanelItem
             disabled={!editor.can().splitCell()}
             onClick={() => run(() => editor.chain().focus().splitCell().run())}
           >
-            <TableCellsSplit className="size-3.5" />
+            <TableCellsSplit className="size-4" />
             {t("Split cell")}
           </PanelItem>
           <PanelItem onClick={() => run(() => editor.chain().focus().toggleHeaderRow().run())}>
@@ -88,15 +88,15 @@ export function TableActions({ editor, open, onToggle, onClose }: PanelControlPr
           </PanelItem>
           <div className="my-1 h-px bg-border" />
           <PanelItem onClick={() => run(() => editor.chain().focus().deleteRow().run())}>
-            <Trash2 className="size-3.5" />
+            <Trash2 className="size-4" />
             {t("Delete row")}
           </PanelItem>
           <PanelItem onClick={() => run(() => editor.chain().focus().deleteColumn().run())}>
-            <Trash2 className="size-3.5" />
+            <Trash2 className="size-4" />
             {t("Delete column")}
           </PanelItem>
           <PanelItem destructive onClick={() => run(() => editor.chain().focus().deleteTable().run())}>
-            <Trash2 className="size-3.5" />
+            <Trash2 className="size-4" />
             {t("Delete table")}
           </PanelItem>
         </Panel>

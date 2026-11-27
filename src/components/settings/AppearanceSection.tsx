@@ -59,7 +59,7 @@ export function AppearanceSection() {
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <mode.icon className="size-3.5" strokeWidth={1.9} />
+                <mode.icon className="size-4" strokeWidth={1.9} />
                 {t(mode.label)}
               </button>
             );
@@ -114,7 +114,7 @@ export function AppearanceSection() {
                   <span className="flex-1 truncate text-[12.5px] font-medium">
                     {t(option.label)}
                   </span>
-                  {active && <Check className="size-3.5 shrink-0 text-brand" />}
+                  {active && <Check className="size-4 shrink-0 text-brand" />}
                 </div>
               </button>
             );

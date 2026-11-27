@@ -56,7 +56,7 @@ function LinkEditor({ editor, onDone }: { editor: Editor; onDone: () => void }) 
         className="h-6 w-[168px] rounded border border-border bg-background px-1.5 text-[12px] outline-none focus:border-brand"
       />
       <ToolButton title={t("Apply link")} onClick={commit}>
-        <LinkIcon className="size-3.5" />
+        <LinkIcon className="size-4" />
       </ToolButton>
     </span>
   );
@@ -72,7 +72,7 @@ export function LinkControls({ editor }: { editor: Editor }) {
         <LinkEditor editor={editor} onDone={() => setOpen(false)} />
       ) : (
         <ToolButton title={t("Link")} active={editor.isActive("link")} onClick={() => setOpen(true)}>
-          <LinkIcon className="size-3.5" />
+          <LinkIcon className="size-4" />
         </ToolButton>
       )}
       {editor.isActive("link") && !open && (
@@ -80,7 +80,7 @@ export function LinkControls({ editor }: { editor: Editor }) {
           title={t("Remove link")}
           onClick={() => editor.chain().focus().extendMarkRange("link").unsetLink().run()}
         >
-          <Unlink className="size-3.5" />
+          <Unlink className="size-4" />
         </ToolButton>
       )}
     </>
