@@ -91,4 +91,33 @@ describe("Novion Paper theme", () => {
 
     expect(root.dataset.palette).toBeUndefined();
   });
+
+  it("reads and persists the expanded reading fonts", async () => {
+    for (const font of ["plex", "literata", "newsreader", "merriweather"] as const) {
+      const storage = memoryStorage({ "novion:doc-font": font });
+      const { useUi } = await loadUi(storage);
+      expect(useUi.getState().docFont).toBe(font);
+    }
+
+    const storage = memoryStorage();
+    const { useUi, DOC_FONT_STACKS } = await loadUi(storage);
+
+    useUi.getState().setDocFont("literata");
+    expect(storage.getItem("novion:doc-font")).toBe("literata");
+    expect(root.style.setProperty).toHaveBeenCalledWith(
+      "--font-doc",
+      DOC_FONT_STACKS.literata,
+    );
+    expect(root.style.setProperty).toHaveBeenCalledWith(
+      "--font-ui",
+      DOC_FONT_STACKS.literata,
+    );
+  });
+
+  it("falls back to the system font for an unknown stored font", async () => {
+    const storage = memoryStorage({ "novion:doc-font": "unknown-face" });
+    const { useUi } = await loadUi(storage);
+
+    expect(useUi.getState().docFont).toBe("system");
+  });
 });

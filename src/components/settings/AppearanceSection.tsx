@@ -21,7 +21,11 @@ const MODES: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
 const DOC_FONTS: { id: DocFontId; label: string }[] = [
   { id: "system", label: "System default" },
   { id: "inter", label: "Inter" },
+  { id: "plex", label: "IBM Plex Sans" },
   { id: "serif", label: "Source Serif" },
+  { id: "literata", label: "Literata" },
+  { id: "newsreader", label: "Newsreader" },
+  { id: "merriweather", label: "Merriweather" },
   { id: "mono", label: "JetBrains Mono" },
 ];
 

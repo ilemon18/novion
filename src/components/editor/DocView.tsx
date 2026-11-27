@@ -419,6 +419,64 @@ export default function DocView({ docId }: { docId: string }) {
             }}
           />
         )}
+        {/* The document path and save state share one fixed-height strip. The
+            breadcrumb can be clicked without starting a window drag, while the
+            empty parts of the strip remain draggable. */}
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-x-0 top-0 z-30 flex h-[42px] min-w-0 items-center gap-3 bg-background px-5",
+            findOpen && "pr-[340px]",
+          )}
+        >
+          <nav
+            aria-label={t("Breadcrumb")}
+            className="pointer-events-auto flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[11.5px] text-muted-foreground"
+            data-no-window-drag
+          >
+            <span className="shrink-0 opacity-80">Novion</span>
+            {crumbs.map((crumb) => (
+              <span key={crumb.id} className="flex min-w-0 items-center gap-1">
+                <ChevronRight className="size-3 shrink-0 opacity-50" />
+                {crumb.builtin ? (
+                  // system folders live in their own sidebar section, so
+                  // they are part of the path but not a jump target
+                  <span className="truncate opacity-80">
+                    {crumb.name || t("Untitled")}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // the jump is pointless with the rail collapsed
+                      setSidebarOpen(true);
+                      focusFolder(crumb.id);
+                    }}
+                    title={t("Reveal “{name}” in the sidebar", {
+                      name: crumb.name || t("Untitled"),
+                    })}
+                    className="-mx-1 min-w-0 truncate rounded px-1 py-0.5 opacity-80 outline-none transition-colors hover:bg-sidebar-hover hover:text-foreground hover:opacity-100 focus-visible:bg-sidebar-hover"
+                  >
+                    {crumb.name || t("Untitled")}
+                  </button>
+                )}
+              </span>
+            ))}
+            {pinned && (
+              <>
+                <ChevronRight className="size-3 shrink-0 opacity-50" />
+                <Pin className="size-3 shrink-0 rotate-45 text-brand" strokeWidth={2} />
+              </>
+            )}
+          </nav>
+
+          {!findOpen && (
+            <div className="flex shrink-0 items-center gap-3">
+              <RemoteBadge />
+              <UpdateButton />
+              <SaveIndicator saveKey={docKey} />
+            </div>
+          )}
+        </div>
         <div ref={scrollRef} className="doc-scroll scroller scroll-pane flex-1">
           <div className="mx-auto w-full max-w-[860px] px-8 pb-[18vh] pt-[42px]">
             {(trashed || completed) && (
@@ -485,44 +543,7 @@ export default function DocView({ docId }: { docId: string }) {
               </div>
             )}
 
-            <div className="mb-2.5 flex items-center gap-1 text-[11.5px] text-muted-foreground">
-              <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-                <span className="shrink-0 opacity-80">Novion</span>
-                {crumbs.map((crumb) => (
-                  <span key={crumb.id} className="flex min-w-0 items-center gap-1">
-                    <ChevronRight className="size-3 shrink-0 opacity-50" />
-                    {crumb.builtin ? (
-                      // system folders live in their own sidebar section, so
-                      // they are part of the path but not a jump target
-                      <span className="truncate opacity-80">
-                        {crumb.name || t("Untitled")}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          // the jump is pointless with the rail collapsed
-                          setSidebarOpen(true);
-                          focusFolder(crumb.id);
-                        }}
-                        title={t("Reveal “{name}” in the sidebar", {
-                          name: crumb.name || t("Untitled"),
-                        })}
-                        className="-mx-1 min-w-0 truncate rounded px-1 py-0.5 opacity-80 outline-none transition-colors hover:bg-sidebar-hover hover:text-foreground hover:opacity-100 focus-visible:bg-sidebar-hover"
-                      >
-                        {crumb.name || t("Untitled")}
-                      </button>
-                    )}
-                  </span>
-                ))}
-                {pinned && (
-                  <>
-                    <ChevronRight className="size-3 shrink-0 opacity-50" />
-                    <Pin className="size-3 shrink-0 rotate-45 text-brand" strokeWidth={2} />
-                  </>
-                )}
-              </div>
-
+            <div className="mb-2.5 flex items-center justify-end gap-1 text-[11.5px] text-muted-foreground">
               <div className="flex shrink-0 items-center gap-1">
                 {!trashed && (
                   <Tooltip>
@@ -647,17 +668,6 @@ export default function DocView({ docId }: { docId: string }) {
           </div>
         </div>
 
-        {/* The first 42px of the column are reserved for this strip, on every
-            platform, so it can never sit on the breadcrumb row. The remote
-            badge shares this one right-aligned row with update/save, which is
-            what keeps a long host name from covering the save indicator. */}
-        {!findOpen && (
-          <div className="pointer-events-none absolute right-5 top-0 z-30 flex h-[42px] items-center gap-3">
-            <RemoteBadge />
-            <UpdateButton />
-            <SaveIndicator saveKey={docKey} />
-          </div>
-        )}
       </div>
 
       {outlineVisible && (

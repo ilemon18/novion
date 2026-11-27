@@ -13,9 +13,26 @@ export type SettingsSection =
   | "about";
 
 /** Built-in typefaces; the whole interface and the document both use them. */
-export type DocFontId = "system" | "inter" | "serif" | "mono";
+export type DocFontId =
+  | "system"
+  | "inter"
+  | "plex"
+  | "serif"
+  | "literata"
+  | "newsreader"
+  | "merriweather"
+  | "mono";
 
-export const DOC_FONT_IDS: DocFontId[] = ["system", "inter", "serif", "mono"];
+export const DOC_FONT_IDS: DocFontId[] = [
+  "system",
+  "inter",
+  "plex",
+  "serif",
+  "literata",
+  "newsreader",
+  "merriweather",
+  "mono",
+];
 
 /**
  * Latin faces ship with the app (`src/assets/fonts`, OFL). Each stack ends in
@@ -29,8 +46,16 @@ export const DOC_FONT_STACKS: Record<DocFontId, string> = {
     '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif',
   inter:
     '"Inter Variable", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif',
+  plex:
+    '"IBM Plex Sans Variable", "Inter Variable", -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif',
   serif:
     '"Source Serif 4 Variable", "Source Serif 4", Georgia, "Songti SC", "Noto Serif CJK SC", SimSun, serif',
+  literata:
+    '"Literata Variable", "Source Serif 4 Variable", Georgia, "Songti SC", "Noto Serif CJK SC", SimSun, serif',
+  newsreader:
+    '"Newsreader Variable", "Source Serif 4 Variable", Georgia, "Songti SC", "Noto Serif CJK SC", SimSun, serif',
+  merriweather:
+    '"Merriweather Variable", "Source Serif 4 Variable", Georgia, "Songti SC", "Noto Serif CJK SC", SimSun, serif',
   mono:
     '"JetBrains Mono Variable", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", "PingFang SC", monospace',
 };

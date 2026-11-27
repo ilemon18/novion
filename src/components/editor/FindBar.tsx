@@ -150,7 +150,7 @@ export function FindBar({ editor, onClose, initialQuery = "" }: Props) {
   };
 
   return (
-    <div className="anim-menu absolute right-5 top-2 z-30 flex flex-col gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 shadow-popover">
+    <div className="anim-menu absolute right-5 top-2 z-40 flex flex-col gap-1 rounded-lg border border-border bg-popover px-1.5 py-1 shadow-popover">
       <div className="flex items-center gap-1">
         <input
           ref={inputRef}
